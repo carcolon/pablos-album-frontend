@@ -390,6 +390,9 @@ h3 {
 }
 
 .photo-frame {
+  background: #f1e7d5;
+  box-shadow: 0 18px 30px rgba(67, 54, 38, 0.18);
+  overflow: hidden;
   margin: 0;
 }
 
@@ -402,14 +405,17 @@ h3 {
   min-height: 0;
   padding: 0;
   text-align: left;
+  position: relative;
+  width: 100%;
 }
 
 .photo-frame img {
   aspect-ratio: 4 / 5;
   border: 10px solid #fffaf0;
-  box-shadow: 0 18px 30px rgba(67, 54, 38, 0.18);
   display: block;
+  height: 100%;
   object-fit: cover;
+  object-position: center;
   width: 100%;
 }
 
@@ -421,11 +427,20 @@ h3 {
 }
 
 .photo-button span {
-  color: var(--muted);
-  display: block;
+  background: linear-gradient(0deg, rgba(25, 22, 19, 0.72), transparent);
+  bottom: 0;
+  color: #fffaf0;
+  display: grid;
   font-family: "Segoe Print", "Bradley Hand ITC", cursive;
   font-size: 0.95rem;
-  margin-top: 10px;
+  left: 0;
+  margin: 0;
+  min-height: 42%;
+  padding: 70px 16px 14px;
+  place-items: end start;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
 }
 
 .photo-button:hover {
@@ -469,6 +484,22 @@ h3 {
   justify-content: center;
 }
 
+.photo-page {
+  justify-content: space-between;
+}
+
+.hero-photo {
+  aspect-ratio: 4 / 5;
+  display: block;
+  max-height: min(72%, 440px);
+  min-height: 0;
+  position: relative;
+}
+
+.hero-photo img {
+  aspect-ratio: auto;
+}
+
 .photo-page h2,
 .collage-page h2,
 .letter-page h2 {
@@ -491,6 +522,12 @@ h3 {
   min-width: 0;
 }
 
+.photo-grid .photo-button,
+.photo-grid .empty-photo-slot {
+  aspect-ratio: 1;
+  position: relative;
+}
+
 .photo-grid img {
   aspect-ratio: 1;
 }
@@ -511,6 +548,7 @@ h3 {
 .photo-grid-three .empty-photo-slot {
   min-height: 0;
   min-width: 0;
+  position: relative;
 }
 
 .photo-grid-three img,
@@ -882,7 +920,10 @@ h3 {
   font-size: 0.72rem;
   font-weight: 800;
   left: 6px;
+  min-height: auto;
   padding: 3px 7px;
+  pointer-events: none;
+  place-items: initial;
   position: absolute;
 }
 
@@ -975,7 +1016,9 @@ h3 {
 
 .lightbox-canvas {
   align-items: center;
-  background: #080808;
+  background:
+    radial-gradient(circle at center, rgba(255, 250, 240, 0.08), transparent 48%),
+    #080808;
   cursor: grab;
   display: flex;
   height: min(74svh, 720px);
@@ -989,6 +1032,7 @@ h3 {
 }
 
 .lightbox-canvas img {
+  height: auto;
   max-height: 100%;
   max-width: 100%;
   object-fit: contain;
