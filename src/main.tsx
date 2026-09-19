@@ -313,30 +313,11 @@ async function fetchAuthStatus(): Promise<AuthStatus> {
   return (await response.json()) as AuthStatus
 }
 
-async function registerOwner(data: AuthForm): Promise<AuthUser> {
-  const response = await apiFetch('/api/auth/register-owner', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: data.email,
-      password: data.password,
-      displayName: data.displayName ?? '',
-    }),
-  })
-
-  if (!response.ok) {
-    const problem = (await response.json().catch(() => null)) as { error?: string; errors?: string[] } | null
-    throw new Error(problem?.error ?? problem?.errors?.join(' ') ?? 'Could not create owner account.')
-  }
-
-  return (await response.json()) as AuthUser
-}
-
 async function login(data: AuthForm): Promise<AuthUser> {
   const response = await apiFetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: data.email, password: data.password }),
+    body: JSON.stringify({ email: data.email, password: data.password, displayName: data.displayName }),
   })
 
   if (!response.ok) {
@@ -354,33 +335,26 @@ async function logout(): Promise<void> {
   }
 }
 
-function useAlbum(enabled = true) {
+function useAlbum() {
   return useQuery({
     queryKey: ['album'],
     queryFn: fetchAlbum,
     retry: false,
-    enabled,
     placeholderData: fallbackAlbum,
   })
 }
 
 function App() {
   const auth = useQuery({ queryKey: ['auth'], queryFn: fetchAuthStatus, retry: false })
-  const { data: album = fallbackAlbum, isError } = useAlbum(auth.data?.isAuthenticated == true)
+  const { data: album = fallbackAlbum, isError } = useAlbum()
   const { mode, setMode } = useAlbumStore()
-
-  if (auth.isLoading) {
-    return <main className="app-shell auth-shell" />
-  }
-
-  if (auth.isError || !auth.data?.isAuthenticated) {
-    return <AuthScreen hasOwner={auth.data?.hasOwner ?? true} />
-  }
+  const isAuthenticated = auth.data?.isAuthenticated == true
+  const canUseStudio = isAuthenticated && (auth.data?.user?.roles.includes('Owner') || auth.data?.user?.roles.includes('Editor'))
 
   return (
     <main className="app-shell">
-      <TopBar mode={mode} setMode={setMode} apiOffline={isError} user={auth.data.user} />
-      {mode === 'viewer' ? <AlbumViewer album={album} /> : <AdminStudio album={album} />}
+      <TopBar mode={mode} setMode={setMode} apiOffline={isError} user={auth.data?.user ?? null} />
+      {mode === 'viewer' ? <AlbumViewer album={album} /> : canUseStudio ? <AdminStudio album={album} /> : <AuthScreen hasOwner={auth.data?.hasOwner ?? true} />}
     </main>
   )
 }
@@ -392,7 +366,7 @@ function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
     defaultValues: { email: '', password: '', displayName: '' },
   })
   const mutation = useMutation({
-    mutationFn: isRegister ? registerOwner : login,
+    mutationFn: isRegister ? login : login,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['auth'] })
       await queryClient.invalidateQueries({ queryKey: ['album'] })
@@ -400,14 +374,14 @@ function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
   })
 
   return (
-    <main className="auth-shell">
+    <section className="auth-shell">
       <section className="auth-panel">
         <div className="auth-brand">
           <BookOpen size={24} aria-hidden="true" />
           <span>Pablo's Album</span>
         </div>
-        <p className="eyebrow">{isRegister ? 'First setup' : 'Private access'}</p>
-        <h1>{isRegister ? 'Create owner account' : 'Log in'}</h1>
+        <p className="eyebrow">{isRegister ? 'First admin login' : 'Studio access'}</p>
+        <h1>{isRegister ? 'Create admin access' : 'Log in to Studio'}</h1>
         <form className="auth-form" onSubmit={handleSubmit((data) => mutation.mutate(data))}>
           {isRegister && (
             <label>
@@ -429,11 +403,11 @@ function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
           {mutation.error && <small>{mutation.error.message}</small>}
           <button disabled={mutation.isPending} type="submit">
             {isRegister ? <UserPlus size={17} aria-hidden="true" /> : <KeyRound size={17} aria-hidden="true" />}
-            {mutation.isPending ? 'Working' : isRegister ? 'Create owner' : 'Log in'}
+            {mutation.isPending ? 'Working' : isRegister ? 'Create admin' : 'Log in'}
           </button>
         </form>
       </section>
-    </main>
+    </section>
   )
 }
 
@@ -473,14 +447,16 @@ function TopBar({
           Studio
         </button>
       </nav>
-      <div className="privacy-pill" title="Private media is served through the API in production.">
+      <div className="privacy-pill" title="Studio changes require admin access.">
         <Lock size={16} aria-hidden="true" />
-        {apiOffline ? 'Demo data' : user?.displayName || 'API connected'}
+        {apiOffline ? 'Demo data' : user?.displayName || 'Public album'}
       </div>
-      <button className="logout-button" onClick={() => logoutMutation.mutate()} type="button">
-        <LogOut size={17} aria-hidden="true" />
-        Logout
-      </button>
+      {user && (
+        <button className="logout-button" onClick={() => logoutMutation.mutate()} type="button">
+          <LogOut size={17} aria-hidden="true" />
+          Logout
+        </button>
+      )}
     </header>
   )
 }
