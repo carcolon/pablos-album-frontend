@@ -238,8 +238,34 @@ h3 {
   position: relative;
 }
 
-.flip-book {
-  filter: drop-shadow(0 28px 36px rgba(67, 54, 38, 0.24));
+.album-book {
+  aspect-ratio: 1.46 / 1;
+  background: #d9c9ac;
+  box-shadow:
+    0 28px 54px rgba(67, 54, 38, 0.28),
+    inset 0 0 0 1px rgba(67, 54, 38, 0.1);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-height: min(70svh, 720px);
+  max-width: 1120px;
+  min-height: 520px;
+  position: relative;
+  transform-style: preserve-3d;
+  width: min(100%, 1120px);
+}
+
+.album-book::after {
+  background:
+    linear-gradient(90deg, rgba(67, 54, 38, 0.22), rgba(255, 250, 240, 0.2) 45%, rgba(67, 54, 38, 0.18));
+  bottom: 0;
+  content: "";
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: 22px;
+  z-index: 5;
 }
 
 .page-turn-sheen {
@@ -265,6 +291,22 @@ h3 {
   overflow: hidden;
   padding: 28px;
   position: relative;
+}
+
+.left-page {
+  border-right: 0;
+  box-shadow: inset -18px 0 24px rgba(67, 54, 38, 0.08);
+}
+
+.right-page {
+  border-left: 0;
+  box-shadow: inset 18px 0 24px rgba(67, 54, 38, 0.07);
+}
+
+.blank-page {
+  background:
+    linear-gradient(90deg, rgba(67, 54, 38, 0.05), transparent 18%),
+    var(--paper);
 }
 
 .cover-page {
@@ -613,6 +655,28 @@ h3 {
 
   .book-page {
     padding: 22px;
+  }
+
+  .album-book {
+    aspect-ratio: 0.73 / 1;
+    grid-template-columns: 1fr;
+    max-height: none;
+    min-height: 520px;
+    width: min(100%, 430px);
+  }
+
+  .album-book::after,
+  .left-page {
+    display: none;
+  }
+
+  .right-page {
+    border-left: 1px solid rgba(67, 54, 38, 0.14);
+    box-shadow: none;
+  }
+
+  .album-book .left-page + .right-page {
+    display: none;
   }
 
   .admin-grid {

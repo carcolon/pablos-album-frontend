@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import HTMLFlipBook from 'react-pageflip'
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -192,6 +191,8 @@ async function fetchAlbum(): Promise<Album> {
 }
 
 type UploadPhotoResponse = {
+  pageId: string
+  photoId: string
   originalFileName: string
   storedFileName: string
   originalSizeBytes: number
@@ -201,11 +202,11 @@ type UploadPhotoResponse = {
   storageKey: string
 }
 
-async function uploadPhoto(albumId: string, file: File): Promise<UploadPhotoResponse> {
+async function uploadPhoto(albumId: string, pageId: string, file: File): Promise<UploadPhotoResponse> {
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await apiFetch(`/api/albums/${albumId}/photos`, {
+  const response = await apiFetch(`/api/albums/${albumId}/pages/${pageId}/photos`, {
     method: 'POST',
     body: formData,
   })
@@ -216,6 +217,19 @@ async function uploadPhoto(albumId: string, file: File): Promise<UploadPhotoResp
   }
 
   return (await response.json()) as UploadPhotoResponse
+}
+
+async function updatePageLayout(albumId: string, pageId: string, layout: string): Promise<void> {
+  const response = await apiFetch(`/api/albums/${albumId}/pages/${pageId}/layout`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout }),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Layout update failed')
+  }
 }
 
 async function getCsrfToken(): Promise<string> {
@@ -413,6 +427,18 @@ function AlbumViewer({ album }: { album: Album }) {
   const { pageIndex, setPageIndex, soundEnabled, toggleSound } = useAlbumStore()
 
   const pages = useMemo(() => [coverPage(album), ...album.pages], [album])
+  const leftPage = pages[pageIndex]
+  const rightPage = pages[pageIndex + 1]
+  const maxPageIndex = Math.max(0, pages.length - 1)
+
+  useEffect(() => {
+    animateIn()
+  }, [pageIndex])
+
+  function turnTo(nextPageIndex: number) {
+    const normalized = Math.max(0, Math.min(maxPageIndex, nextPageIndex))
+    setPageIndex(normalized % 2 === 0 ? normalized : normalized - 1)
+  }
 
   function animateIn() {
     if (!heroRef.current) {
@@ -445,10 +471,10 @@ function AlbumViewer({ album }: { album: Album }) {
         <p className="eyebrow">Family album</p>
         <h1>{album.title}</h1>
         <div className="viewer-actions">
-          <button onClick={() => setPageIndex(Math.max(0, pageIndex - 1))} type="button">
+          <button disabled={pageIndex === 0} onClick={() => turnTo(pageIndex - 2)} type="button">
             Previous
           </button>
-          <button onClick={() => setPageIndex(Math.min(pages.length - 1, pageIndex + 1))} type="button">
+          <button disabled={pageIndex + 2 > maxPageIndex} onClick={() => turnTo(pageIndex + 2)} type="button">
             Next
           </button>
           <button className={soundEnabled ? 'active' : ''} onClick={toggleSound} type="button">
@@ -460,39 +486,10 @@ function AlbumViewer({ album }: { album: Album }) {
 
       <div className="book-stage" ref={heroRef}>
         <div className="page-turn-sheen" aria-hidden="true" />
-        <HTMLFlipBook
-          width={430}
-          height={590}
-          size="stretch"
-          minWidth={310}
-          maxWidth={430}
-          minHeight={460}
-          maxHeight={590}
-          drawShadow
-          flippingTime={850}
-          mobileScrollSupport
-          showCover
-          usePortrait
-          startPage={pageIndex}
-          onFlip={(event) => {
-            setPageIndex(event.data)
-            animateIn()
-          }}
-          className="flip-book"
-          style={{}}
-          startZIndex={0}
-          autoSize
-          maxShadowOpacity={0.24}
-          clickEventForward
-          useMouseEvents
-          swipeDistance={20}
-          showPageCorners
-          disableFlipByClick={false}
-        >
-          {pages.map((page) => (
-            <SpreadPage key={page.id} page={page} />
-          ))}
-        </HTMLFlipBook>
+        <div className="album-book" aria-label={`${album.title} open album`}>
+          {leftPage && <SpreadPage page={leftPage} side="left" />}
+          {rightPage ? <SpreadPage page={rightPage} side="right" /> : <article className="book-page blank-page right-page" />}
+        </div>
       </div>
     </section>
   )
@@ -510,12 +507,13 @@ function coverPage(album: Album): AlbumPage {
   }
 }
 
-function SpreadPage({ page }: { page: AlbumPage }) {
+function SpreadPage({ page, side }: { page: AlbumPage; side: 'left' | 'right' }) {
   const firstPhoto = page.photos[0]
+  const sideClass = side === 'left' ? 'left-page' : 'right-page'
 
   if (page.layout === 'Cover') {
     return (
-      <article className="book-page cover-page">
+      <article className={`book-page cover-page ${sideClass}`}>
         <div className="cover-paper">
           <div className="cover-mark" aria-hidden="true">
             PA
@@ -530,7 +528,7 @@ function SpreadPage({ page }: { page: AlbumPage }) {
 
   if (page.layout === 'Letter') {
     return (
-      <article className="book-page letter-page">
+      <article className={`book-page letter-page ${sideClass}`}>
         <div className="page-copy">
           <p className="eyebrow">{page.dateLabel}</p>
           <h2>{page.title}</h2>
@@ -542,7 +540,7 @@ function SpreadPage({ page }: { page: AlbumPage }) {
 
   if (page.layout === 'TwoPhotos') {
     return (
-      <article className="book-page collage-page">
+      <article className={`book-page collage-page ${sideClass}`}>
         <div className="page-copy">
           <p className="eyebrow">{page.dateLabel}</p>
           <h2>{page.title}</h2>
@@ -563,7 +561,7 @@ function SpreadPage({ page }: { page: AlbumPage }) {
   }
 
   return (
-    <article className="book-page photo-page">
+    <article className={`book-page photo-page ${sideClass}`}>
       {firstPhoto ? (
         <figure className="photo-frame hero-photo">
           <img src={firstPhoto.url} alt={firstPhoto.alt} />
@@ -608,12 +606,19 @@ function AdminStudio({ album }: { album: Album }) {
 
   const selectedPage = workingPages.find((page) => page.id === selectedPageId) ?? workingPages[0]
 
-  function assignLayout(layout: string) {
+  async function assignLayout(layout: string) {
     if (!selectedPage) {
       return
     }
 
     setWorkingPages((pages) => pages.map((page) => (page.id === selectedPage.id ? { ...page, layout } : page)))
+    try {
+      await updatePageLayout(album.id, selectedPage.id, layout)
+      await queryClient.invalidateQueries({ queryKey: ['album'] })
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : 'Layout update failed.')
+      setWorkingPages(album.pages)
+    }
   }
 
   function submitInvite(data: InviteForm) {
@@ -634,7 +639,12 @@ function AdminStudio({ album }: { album: Album }) {
     setIsUploading(true)
     setUploadStatus(`Uploading ${file.name}...`)
     try {
-      const result = await uploadPhoto(album.id, file)
+      if (!selectedPage) {
+        setUploadStatus('Choose a page first.')
+        return
+      }
+
+      const result = await uploadPhoto(album.id, selectedPage.id, file)
       const beforeMb = (result.originalSizeBytes / 1024 / 1024).toFixed(2)
       const afterMb = (result.storedSizeBytes / 1024 / 1024).toFixed(2)
       setUploadStatus(
@@ -643,6 +653,7 @@ function AdminStudio({ album }: { album: Album }) {
         }`,
       )
       form.reset()
+      await queryClient.invalidateQueries({ queryKey: ['album'] })
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : 'Upload failed.')
     } finally {
