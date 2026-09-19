@@ -17,10 +17,14 @@ import {
   LogOut,
   MailPlus,
   Palette,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   UploadCloud,
   UserPlus,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import './styles.css'
 
@@ -65,6 +69,14 @@ type Album = {
 }
 
 type AppMode = 'viewer' | 'admin'
+
+type DragState = {
+  pointerId: number
+  startX: number
+  startY: number
+  currentX: number
+  startedAt: number
+}
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 let csrfToken: string | null = null
@@ -424,20 +436,43 @@ function TopBar({
 
 function AlbumViewer({ album }: { album: Album }) {
   const heroRef = useRef<HTMLDivElement | null>(null)
+  const bookRef = useRef<HTMLDivElement | null>(null)
+  const dragState = useRef<DragState | null>(null)
+  const turnDirection = useRef<'next' | 'previous'>('next')
+  const isSinglePage = useIsSinglePage()
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
   const { pageIndex, setPageIndex, soundEnabled, toggleSound } = useAlbumStore()
 
   const pages = useMemo(() => [coverPage(album), ...album.pages], [album])
   const leftPage = pages[pageIndex]
-  const rightPage = pages[pageIndex + 1]
+  const rightPage = isSinglePage ? null : pages[pageIndex + 1]
   const maxPageIndex = Math.max(0, pages.length - 1)
+  const pageStep = isSinglePage ? 1 : 2
 
   useEffect(() => {
     animateIn()
   }, [pageIndex])
 
+  useEffect(() => {
+    const normalized = normalizePageIndex(pageIndex)
+    if (normalized !== pageIndex) {
+      setPageIndex(normalized)
+    }
+  }, [isSinglePage, pages.length])
+
   function turnTo(nextPageIndex: number) {
-    const normalized = Math.max(0, Math.min(maxPageIndex, nextPageIndex))
-    setPageIndex(normalized % 2 === 0 ? normalized : normalized - 1)
+    const normalized = normalizePageIndex(nextPageIndex)
+    if (normalized === pageIndex) {
+      return
+    }
+
+    turnDirection.current = normalized > pageIndex ? 'next' : 'previous'
+    setPageIndex(normalized)
+  }
+
+  function normalizePageIndex(value: number) {
+    const normalized = Math.max(0, Math.min(maxPageIndex, value))
+    return isSinglePage ? normalized : normalized % 2 === 0 ? normalized : normalized - 1
   }
 
   function animateIn() {
@@ -448,8 +483,25 @@ function AlbumViewer({ album }: { album: Album }) {
     const timeline = gsap.timeline()
     timeline.fromTo(
       heroRef.current,
-      { rotateY: -3, scale: 0.985 },
+      { rotateY: turnDirection.current === 'next' ? -3 : 3, scale: 0.985 },
       { rotateY: 0, scale: 1, duration: 0.55, ease: 'power2.out' },
+    )
+    timeline.fromTo(
+      heroRef.current.querySelector('.turning-sheet'),
+      {
+        opacity: 0.88,
+        rotateY: turnDirection.current === 'next' ? 0 : 0,
+        transformOrigin: turnDirection.current === 'next' ? 'left center' : 'right center',
+        xPercent: turnDirection.current === 'next' ? 48 : -48,
+      },
+      {
+        opacity: 0,
+        rotateY: turnDirection.current === 'next' ? -132 : 132,
+        xPercent: turnDirection.current === 'next' ? -8 : 8,
+        duration: 0.72,
+        ease: 'power2.inOut',
+      },
+      0,
     )
     timeline.fromTo(
       heroRef.current.querySelectorAll('.page-copy, .photo-frame, .letter-body, .empty-photo-slot, .cover-mark'),
@@ -465,16 +517,70 @@ function AlbumViewer({ album }: { album: Album }) {
     )
   }
 
+  function beginDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 && event.pointerType === 'mouse') {
+      return
+    }
+
+    dragState.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      currentX: event.clientX,
+      startedAt: Date.now(),
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.currentTarget.classList.add('dragging')
+  }
+
+  function moveDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragState.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+
+    drag.currentX = event.clientX
+    const delta = drag.currentX - drag.startX
+    const clamped = Math.max(-90, Math.min(90, delta))
+    gsap.to(bookRef.current, {
+      rotateY: clamped / 18,
+      x: clamped / 8,
+      duration: 0.12,
+      ease: 'power2.out',
+    })
+  }
+
+  function endDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragState.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+
+    event.currentTarget.classList.remove('dragging')
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    dragState.current = null
+    gsap.to(bookRef.current, { rotateY: 0, x: 0, duration: 0.24, ease: 'power2.out' })
+
+    const delta = drag.currentX - drag.startX
+    const elapsed = Math.max(1, Date.now() - drag.startedAt)
+    const velocity = Math.abs(delta) / elapsed
+    if (delta < -54 || (delta < -28 && velocity > 0.45)) {
+      turnTo(pageIndex + pageStep)
+    } else if (delta > 54 || (delta > 28 && velocity > 0.45)) {
+      turnTo(pageIndex - pageStep)
+    }
+  }
+
   return (
     <section className="viewer">
       <div className="viewer-header">
         <p className="eyebrow">Family album</p>
         <h1>{album.title}</h1>
         <div className="viewer-actions">
-          <button disabled={pageIndex === 0} onClick={() => turnTo(pageIndex - 2)} type="button">
+          <button disabled={pageIndex === 0} onClick={() => turnTo(pageIndex - pageStep)} type="button">
             Previous
           </button>
-          <button disabled={pageIndex + 2 > maxPageIndex} onClick={() => turnTo(pageIndex + 2)} type="button">
+          <button disabled={pageIndex + pageStep > maxPageIndex} onClick={() => turnTo(pageIndex + pageStep)} type="button">
             Next
           </button>
           <button className={soundEnabled ? 'active' : ''} onClick={toggleSound} type="button">
@@ -486,13 +592,37 @@ function AlbumViewer({ album }: { album: Album }) {
 
       <div className="book-stage" ref={heroRef}>
         <div className="page-turn-sheen" aria-hidden="true" />
-        <div className="album-book" aria-label={`${album.title} open album`}>
-          {leftPage && <SpreadPage page={leftPage} side="left" />}
-          {rightPage ? <SpreadPage page={rightPage} side="right" /> : <article className="book-page blank-page right-page" />}
+        <div
+          className={`album-book ${isSinglePage ? 'single-page-book' : ''}`}
+          aria-label={`${album.title} open album`}
+          onPointerCancel={endDrag}
+          onPointerDown={beginDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          ref={bookRef}
+        >
+          <div className="turning-sheet" aria-hidden="true" />
+          {leftPage && <SpreadPage onPhotoOpen={setSelectedPhoto} page={leftPage} side={isSinglePage ? 'right' : 'left'} />}
+          {rightPage ? <SpreadPage onPhotoOpen={setSelectedPhoto} page={rightPage} side="right" /> : !isSinglePage && <article className="book-page blank-page right-page" />}
         </div>
       </div>
+      {selectedPhoto && <PhotoLightbox onClose={() => setSelectedPhoto(null)} photo={selectedPhoto} />}
     </section>
   )
+}
+
+function useIsSinglePage() {
+  const [isSinglePage, setIsSinglePage] = useState(() => window.matchMedia('(max-width: 760px)').matches)
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)')
+    const update = () => setIsSinglePage(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return isSinglePage
 }
 
 function coverPage(album: Album): AlbumPage {
@@ -507,7 +637,15 @@ function coverPage(album: Album): AlbumPage {
   }
 }
 
-function SpreadPage({ page, side }: { page: AlbumPage; side: 'left' | 'right' }) {
+function SpreadPage({
+  onPhotoOpen,
+  page,
+  side,
+}: {
+  onPhotoOpen: (photo: Photo) => void
+  page: AlbumPage
+  side: 'left' | 'right'
+}) {
   const firstPhoto = page.photos[0]
   const sideClass = side === 'left' ? 'left-page' : 'right-page'
 
@@ -548,10 +686,10 @@ function SpreadPage({ page, side }: { page: AlbumPage; side: 'left' | 'right' })
         <div className="photo-grid">
           {page.photos.length > 0
             ? page.photos.map((photo) => (
-                <figure className="photo-frame" key={photo.id}>
+                <button className="photo-frame photo-button" key={photo.id} onClick={() => onPhotoOpen(photo)} type="button">
                   <img src={photo.url} alt={photo.alt} />
-                  <figcaption>{photo.caption}</figcaption>
-                </figure>
+                  {photo.caption && <span>{photo.caption}</span>}
+                </button>
               ))
             : [0, 1].map((slot) => <EmptyPhotoSlot key={slot} label={`Photo ${slot + 1}`} />)}
         </div>
@@ -563,10 +701,10 @@ function SpreadPage({ page, side }: { page: AlbumPage; side: 'left' | 'right' })
   return (
     <article className={`book-page photo-page ${sideClass}`}>
       {firstPhoto ? (
-        <figure className="photo-frame hero-photo">
+        <button className="photo-frame hero-photo photo-button" onClick={() => onPhotoOpen(firstPhoto)} type="button">
           <img src={firstPhoto.url} alt={firstPhoto.alt} />
-          <figcaption>{firstPhoto.caption}</figcaption>
-        </figure>
+          {firstPhoto.caption && <span>{firstPhoto.caption}</span>}
+        </button>
       ) : (
         <EmptyPhotoSlot label="Photo" />
       )}
@@ -576,6 +714,103 @@ function SpreadPage({ page, side }: { page: AlbumPage; side: 'left' | 'right' })
         <p>{page.text}</p>
       </div>
     </article>
+  )
+}
+
+function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }) {
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const drag = useRef<DragState | null>(null)
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  function setBoundedZoom(nextZoom: number) {
+    setZoom(Math.max(1, Math.min(4, nextZoom)))
+  }
+
+  function resetView() {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+
+  function beginPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (zoom <= 1) {
+      return
+    }
+
+    drag.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX - pan.x,
+      startY: event.clientY - pan.y,
+      currentX: event.clientX,
+      startedAt: Date.now(),
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function movePan(event: React.PointerEvent<HTMLDivElement>) {
+    if (!drag.current || drag.current.pointerId !== event.pointerId || zoom <= 1) {
+      return
+    }
+
+    setPan({ x: event.clientX - drag.current.startX, y: event.clientY - drag.current.startY })
+  }
+
+  function endPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (!drag.current || drag.current.pointerId !== event.pointerId) {
+      return
+    }
+
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    drag.current = null
+  }
+
+  function wheelZoom(event: React.WheelEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setBoundedZoom(zoom + (event.deltaY > 0 ? -0.18 : 0.18))
+  }
+
+  return (
+    <div className="lightbox" role="dialog" aria-label={photo.alt || photo.caption || 'Photo preview'}>
+      <button className="lightbox-backdrop" onClick={onClose} type="button" />
+      <div className="lightbox-panel">
+        <div className="lightbox-toolbar">
+          <button onClick={() => setBoundedZoom(zoom + 0.35)} type="button">
+            <ZoomIn size={18} aria-hidden="true" />
+            Zoom
+          </button>
+          <button onClick={() => setBoundedZoom(zoom - 0.35)} type="button">
+            <ZoomOut size={18} aria-hidden="true" />
+            Out
+          </button>
+          <button onClick={resetView} type="button">
+            <RotateCcw size={18} aria-hidden="true" />
+            Reset
+          </button>
+          <button aria-label="Close photo preview" onClick={onClose} type="button">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="lightbox-canvas" onPointerCancel={endPan} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onWheel={wheelZoom}>
+          <img
+            alt={photo.alt}
+            draggable={false}
+            src={photo.url}
+            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          />
+        </div>
+        {photo.caption && <p>{photo.caption}</p>}
+      </div>
+    </div>
   )
 }
 

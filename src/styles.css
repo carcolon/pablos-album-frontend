@@ -251,7 +251,13 @@ h3 {
   min-height: 520px;
   position: relative;
   transform-style: preserve-3d;
+  touch-action: pan-y;
+  user-select: none;
   width: min(100%, 1120px);
+}
+
+.album-book.dragging {
+  cursor: grabbing;
 }
 
 .album-book::after {
@@ -266,6 +272,30 @@ h3 {
   transform: translateX(-50%);
   width: 22px;
   z-index: 5;
+}
+
+.single-page-book {
+  aspect-ratio: 0.73 / 1;
+  grid-template-columns: 1fr;
+  max-width: 470px;
+  min-height: min(620px, calc(100svh - 210px));
+}
+
+.single-page-book::after {
+  display: none;
+}
+
+.turning-sheet {
+  background:
+    linear-gradient(90deg, rgba(255, 250, 240, 0.98), rgba(238, 225, 199, 0.94)),
+    var(--paper);
+  box-shadow: 0 20px 46px rgba(67, 54, 38, 0.22);
+  inset: 0 50% 0 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transform-style: preserve-3d;
+  z-index: 7;
 }
 
 .page-turn-sheen {
@@ -358,6 +388,17 @@ h3 {
   margin: 0;
 }
 
+.photo-button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: zoom-in;
+  display: block;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+
 .photo-frame img {
   aspect-ratio: 4 / 5;
   border: 10px solid #fffaf0;
@@ -372,6 +413,30 @@ h3 {
   font-family: "Segoe Print", "Bradley Hand ITC", cursive;
   font-size: 0.95rem;
   margin-top: 10px;
+}
+
+.photo-button span {
+  color: var(--muted);
+  display: block;
+  font-family: "Segoe Print", "Bradley Hand ITC", cursive;
+  font-size: 0.95rem;
+  margin-top: 10px;
+}
+
+.photo-button:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.photo-button:hover img {
+  filter: saturate(1.04) contrast(1.03);
+  transform: scale(1.01);
+}
+
+.photo-button img {
+  transition:
+    filter 180ms ease,
+    transform 180ms ease;
 }
 
 .empty-photo-slot {
@@ -616,6 +681,85 @@ h3 {
   line-height: 1.35;
 }
 
+.lightbox {
+  align-items: center;
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.lightbox-backdrop {
+  background: rgba(18, 20, 22, 0.74);
+  border: 0;
+  border-radius: 0;
+  cursor: zoom-out;
+  inset: 0;
+  min-height: 0;
+  padding: 0;
+  position: absolute;
+}
+
+.lightbox-panel {
+  background: #141313;
+  border: 1px solid rgba(255, 250, 240, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.44);
+  color: #fffaf0;
+  display: grid;
+  gap: 12px;
+  max-height: min(92svh, 900px);
+  max-width: min(94vw, 1180px);
+  overflow: hidden;
+  padding: 12px;
+  position: relative;
+  width: 100%;
+}
+
+.lightbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lightbox-toolbar button {
+  background: rgba(255, 250, 240, 0.1);
+  color: #fffaf0;
+}
+
+.lightbox-canvas {
+  align-items: center;
+  background: #080808;
+  cursor: grab;
+  display: flex;
+  height: min(74svh, 720px);
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.lightbox-canvas:active {
+  cursor: grabbing;
+}
+
+.lightbox-canvas img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  transition: transform 90ms ease-out;
+  user-select: none;
+  will-change: transform;
+}
+
+.lightbox-panel p {
+  color: rgba(255, 250, 240, 0.78);
+  margin: 0 4px 4px;
+}
+
 @media (max-width: 1050px) {
   .viewer,
   .studio {
@@ -647,6 +791,7 @@ h3 {
 
   .viewer {
     padding: 22px 12px;
+    min-height: calc(100svh - 165px);
   }
 
   .viewer-header h1 {
@@ -657,9 +802,8 @@ h3 {
     padding: 22px;
   }
 
-  .album-book {
-    aspect-ratio: 0.73 / 1;
-    grid-template-columns: 1fr;
+  .album-book,
+  .single-page-book {
     max-height: none;
     min-height: 520px;
     width: min(100%, 430px);
@@ -675,11 +819,29 @@ h3 {
     box-shadow: none;
   }
 
-  .album-book .left-page + .right-page {
-    display: none;
+  .turning-sheet {
+    inset: 0;
   }
 
   .admin-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .lightbox {
+    padding: 10px;
+  }
+
+  .lightbox-panel {
+    max-height: 96svh;
+    max-width: 100%;
+    padding: 8px;
+  }
+
+  .lightbox-toolbar {
+    justify-content: center;
+  }
+
+  .lightbox-canvas {
+    height: 76svh;
   }
 }
