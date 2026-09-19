@@ -86,6 +86,7 @@ type DragState = {
   startX: number
   startY: number
   currentX: number
+  currentY: number
   startedAt: number
 }
 
@@ -524,6 +525,7 @@ function AlbumViewer({ album }: { album: Album }) {
   const heroRef = useRef<HTMLDivElement | null>(null)
   const bookRef = useRef<HTMLDivElement | null>(null)
   const dragState = useRef<DragState | null>(null)
+  const pressedPhoto = useRef<Photo | null>(null)
   const turnDirection = useRef<'next' | 'previous'>('next')
   const isSinglePage = useIsSinglePage()
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
@@ -613,6 +615,7 @@ function AlbumViewer({ album }: { album: Album }) {
       startX: event.clientX,
       startY: event.clientY,
       currentX: event.clientX,
+      currentY: event.clientY,
       startedAt: Date.now(),
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -626,6 +629,7 @@ function AlbumViewer({ album }: { album: Album }) {
     }
 
     drag.currentX = event.clientX
+    drag.currentY = event.clientY
     const delta = drag.currentX - drag.startX
     const clamped = Math.max(-90, Math.min(90, delta))
     gsap.to(bookRef.current, {
@@ -648,8 +652,19 @@ function AlbumViewer({ album }: { album: Album }) {
     gsap.to(bookRef.current, { rotateY: 0, x: 0, duration: 0.24, ease: 'power2.out' })
 
     const delta = drag.currentX - drag.startX
+    const verticalDelta = drag.currentY - drag.startY
+    const moved = Math.hypot(delta, verticalDelta)
     const elapsed = Math.max(1, Date.now() - drag.startedAt)
     const velocity = Math.abs(delta) / elapsed
+
+    if (pressedPhoto.current && moved < 9) {
+      setSelectedPhoto(pressedPhoto.current)
+      pressedPhoto.current = null
+      return
+    }
+
+    pressedPhoto.current = null
+
     if (delta < -54 || (delta < -28 && velocity > 0.45)) {
       turnTo(pageIndex + pageStep)
     } else if (delta > 54 || (delta > 28 && velocity > 0.45)) {
@@ -688,8 +703,26 @@ function AlbumViewer({ album }: { album: Album }) {
           ref={bookRef}
         >
           <div className="turning-sheet" aria-hidden="true" />
-          {leftPage && <SpreadPage onPhotoOpen={setSelectedPhoto} page={leftPage} side={isSinglePage ? 'right' : 'left'} />}
-          {rightPage ? <SpreadPage onPhotoOpen={setSelectedPhoto} page={rightPage} side="right" /> : !isSinglePage && <article className="book-page blank-page right-page" />}
+          {leftPage && (
+            <SpreadPage
+              onPhotoPress={(photo) => {
+                pressedPhoto.current = photo
+              }}
+              page={leftPage}
+              side={isSinglePage ? 'right' : 'left'}
+            />
+          )}
+          {rightPage ? (
+            <SpreadPage
+              onPhotoPress={(photo) => {
+                pressedPhoto.current = photo
+              }}
+              page={rightPage}
+              side="right"
+            />
+          ) : (
+            !isSinglePage && <article className="book-page blank-page right-page" />
+          )}
         </div>
       </div>
       {selectedPhoto && <PhotoLightbox onClose={() => setSelectedPhoto(null)} photo={selectedPhoto} />}
@@ -724,11 +757,11 @@ function coverPage(album: Album): AlbumPage {
 }
 
 function SpreadPage({
-  onPhotoOpen,
+  onPhotoPress,
   page,
   side,
 }: {
-  onPhotoOpen: (photo: Photo) => void
+  onPhotoPress: (photo: Photo) => void
   page: AlbumPage
   side: 'left' | 'right'
 }) {
@@ -774,7 +807,8 @@ function SpreadPage({
                 aria-label={`Open ${photo.alt || photo.caption || `photo ${index + 1}`}`}
                 className="photo-frame photo-button"
                 key={photo.id}
-                onClick={() => onPhotoOpen(photo)}
+                onClick={(event) => event.preventDefault()}
+                onPointerDown={() => onPhotoPress(photo)}
                 type="button"
               >
                 <img src={mediaUrl(photo.url)} alt={photo.alt} />
@@ -795,7 +829,8 @@ function SpreadPage({
         <button
           aria-label={`Open ${firstPhoto.alt || firstPhoto.caption || 'photo'}`}
           className="photo-frame hero-photo photo-button"
-          onClick={() => onPhotoOpen(firstPhoto)}
+          onClick={(event) => event.preventDefault()}
+          onPointerDown={() => onPhotoPress(firstPhoto)}
           type="button"
         >
           <img src={mediaUrl(firstPhoto.url)} alt={firstPhoto.alt} />
@@ -868,6 +903,7 @@ function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }
       startX: event.clientX - pan.x,
       startY: event.clientY - pan.y,
       currentX: event.clientX,
+      currentY: event.clientY,
       startedAt: Date.now(),
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -878,6 +914,8 @@ function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }
       return
     }
 
+    drag.current.currentX = event.clientX
+    drag.current.currentY = event.clientY
     setPan({ x: event.clientX - drag.current.startX, y: event.clientY - drag.current.startY })
   }
 
