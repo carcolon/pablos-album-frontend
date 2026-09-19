@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import HTMLFlipBook from 'react-pageflip'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -12,13 +12,16 @@ import {
   CalendarDays,
   Eye,
   ImagePlus,
+  KeyRound,
   LayoutTemplate,
   Lock,
+  LogOut,
   MailPlus,
   Palette,
   ShieldCheck,
   Sparkles,
   UploadCloud,
+  UserPlus,
 } from 'lucide-react'
 import './styles.css'
 
@@ -65,6 +68,7 @@ type Album = {
 type AppMode = 'viewer' | 'admin'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+let csrfToken: string | null = null
 
 const fallbackAlbum: Album = {
   id: '018f4b44-6f15-7a45-a810-a1168d98c041',
@@ -185,6 +189,34 @@ const inviteSchema = z.object({
 
 type InviteForm = z.infer<typeof inviteSchema>
 
+const loginSchema = z.object({
+  email: z.string().email('Use a valid email.'),
+  password: z.string().min(10, 'Use at least 10 characters.'),
+  displayName: z.string().optional(),
+})
+
+const registerOwnerSchema = loginSchema.extend({
+  displayName: z.string().min(2, 'Use your name.'),
+})
+
+type AuthForm = {
+  email: string
+  password: string
+  displayName?: string
+}
+
+type AuthUser = {
+  email: string
+  displayName: string
+  roles: string[]
+}
+
+type AuthStatus = {
+  hasOwner: boolean
+  isAuthenticated: boolean
+  user: AuthUser | null
+}
+
 const queryClient = new QueryClient()
 
 const useAlbumStore = create<{
@@ -204,7 +236,7 @@ const useAlbumStore = create<{
 }))
 
 async function fetchAlbum(): Promise<Album> {
-  const response = await fetch(`${apiBaseUrl}/api/albums`)
+  const response = await apiFetch('/api/albums')
   if (!response.ok) {
     throw new Error('API unavailable')
   }
@@ -227,7 +259,7 @@ async function uploadPhoto(albumId: string, file: File): Promise<UploadPhotoResp
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await fetch(`${apiBaseUrl}/api/albums/${albumId}/photos`, {
+  const response = await apiFetch(`/api/albums/${albumId}/photos`, {
     method: 'POST',
     body: formData,
   })
@@ -240,23 +272,167 @@ async function uploadPhoto(albumId: string, file: File): Promise<UploadPhotoResp
   return (await response.json()) as UploadPhotoResponse
 }
 
-function useAlbum() {
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) {
+    return csrfToken
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/security/csrf`, {
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    throw new Error('Security token unavailable')
+  }
+
+  const payload = (await response.json()) as { token: string }
+  csrfToken = payload.token
+  return csrfToken
+}
+
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const method = init.method?.toUpperCase() ?? 'GET'
+  const headers = new Headers(init.headers)
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    headers.set('X-CSRF-TOKEN', await getCsrfToken())
+  }
+
+  return fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  })
+}
+
+async function fetchAuthStatus(): Promise<AuthStatus> {
+  const response = await apiFetch('/api/auth/status')
+  if (!response.ok) {
+    throw new Error('Authentication unavailable')
+  }
+
+  return (await response.json()) as AuthStatus
+}
+
+async function registerOwner(data: AuthForm): Promise<AuthUser> {
+  const response = await apiFetch('/api/auth/register-owner', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: data.email,
+      password: data.password,
+      displayName: data.displayName ?? '',
+    }),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; errors?: string[] } | null
+    throw new Error(problem?.error ?? problem?.errors?.join(' ') ?? 'Could not create owner account.')
+  }
+
+  return (await response.json()) as AuthUser
+}
+
+async function login(data: AuthForm): Promise<AuthUser> {
+  const response = await apiFetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: data.email, password: data.password }),
+  })
+
+  if (!response.ok) {
+    throw new Error('Email or password is incorrect.')
+  }
+
+  return (await response.json()) as AuthUser
+}
+
+async function logout(): Promise<void> {
+  const response = await apiFetch('/api/auth/logout', { method: 'POST' })
+  csrfToken = null
+  if (!response.ok && response.status !== 401) {
+    throw new Error('Logout failed.')
+  }
+}
+
+function useAlbum(enabled = true) {
   return useQuery({
     queryKey: ['album'],
     queryFn: fetchAlbum,
     retry: false,
+    enabled,
     placeholderData: fallbackAlbum,
   })
 }
 
 function App() {
-  const { data: album = fallbackAlbum, isError } = useAlbum()
+  const auth = useQuery({ queryKey: ['auth'], queryFn: fetchAuthStatus, retry: false })
+  const { data: album = fallbackAlbum, isError } = useAlbum(auth.data?.isAuthenticated == true)
   const { mode, setMode } = useAlbumStore()
+
+  if (auth.isLoading) {
+    return <main className="app-shell auth-shell" />
+  }
+
+  if (auth.isError || !auth.data?.isAuthenticated) {
+    return <AuthScreen hasOwner={auth.data?.hasOwner ?? true} />
+  }
 
   return (
     <main className="app-shell">
-      <TopBar mode={mode} setMode={setMode} apiOffline={isError} />
+      <TopBar mode={mode} setMode={setMode} apiOffline={isError} user={auth.data.user} />
       {mode === 'viewer' ? <AlbumViewer album={album} /> : <AdminStudio album={album} />}
+    </main>
+  )
+}
+
+function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
+  const isRegister = !hasOwner
+  const { register, handleSubmit, formState } = useForm<AuthForm>({
+    resolver: zodResolver(isRegister ? registerOwnerSchema : loginSchema),
+    defaultValues: { email: '', password: '', displayName: '' },
+  })
+  const mutation = useMutation({
+    mutationFn: isRegister ? registerOwner : login,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['auth'] })
+      await queryClient.invalidateQueries({ queryKey: ['album'] })
+    },
+  })
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <div className="auth-brand">
+          <BookOpen size={24} aria-hidden="true" />
+          <span>Pablo's Album</span>
+        </div>
+        <p className="eyebrow">{isRegister ? 'First setup' : 'Private access'}</p>
+        <h1>{isRegister ? 'Create owner account' : 'Log in'}</h1>
+        <form className="auth-form" onSubmit={handleSubmit((data) => mutation.mutate(data))}>
+          {isRegister && (
+            <label>
+              Name
+              <input autoComplete="name" placeholder="Your name" {...register('displayName')} />
+              {formState.errors.displayName && <small>{formState.errors.displayName.message}</small>}
+            </label>
+          )}
+          <label>
+            Email
+            <input autoComplete="email" placeholder="family@email.com" type="email" {...register('email')} />
+            {formState.errors.email && <small>{formState.errors.email.message}</small>}
+          </label>
+          <label>
+            Password
+            <input autoComplete={isRegister ? 'new-password' : 'current-password'} type="password" {...register('password')} />
+            {formState.errors.password && <small>{formState.errors.password.message}</small>}
+          </label>
+          {mutation.error && <small>{mutation.error.message}</small>}
+          <button disabled={mutation.isPending} type="submit">
+            {isRegister ? <UserPlus size={17} aria-hidden="true" /> : <KeyRound size={17} aria-hidden="true" />}
+            {mutation.isPending ? 'Working' : isRegister ? 'Create owner' : 'Log in'}
+          </button>
+        </form>
+      </section>
     </main>
   )
 }
@@ -265,11 +441,22 @@ function TopBar({
   mode,
   setMode,
   apiOffline,
+  user,
 }: {
   mode: AppMode
   setMode: (mode: AppMode) => void
   apiOffline: boolean
+  user: AuthUser | null
 }) {
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess: async () => {
+      useAlbumStore.getState().setMode('viewer')
+      await queryClient.invalidateQueries({ queryKey: ['auth'] })
+      queryClient.removeQueries({ queryKey: ['album'] })
+    },
+  })
+
   return (
     <header className="topbar">
       <div className="brand-mark">
@@ -288,8 +475,12 @@ function TopBar({
       </nav>
       <div className="privacy-pill" title="Private media is served through the API in production.">
         <Lock size={16} aria-hidden="true" />
-        {apiOffline ? 'Demo data' : 'API connected'}
+        {apiOffline ? 'Demo data' : user?.displayName || 'API connected'}
       </div>
+      <button className="logout-button" onClick={() => logoutMutation.mutate()} type="button">
+        <LogOut size={17} aria-hidden="true" />
+        Logout
+      </button>
     </header>
   )
 }

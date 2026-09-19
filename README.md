@@ -2,6 +2,8 @@
 
 React + TypeScript viewer and Admin Studio for Pablo's private family album.
 
+The app uses the backend's native cookie login. Requests include credentials, and unsafe requests fetch/send the backend CSRF token with `X-CSRF-TOKEN`.
+
 ## Run
 
 ```powershell
@@ -37,5 +39,6 @@ npm run build
 
 - Page flip album viewer.
 - Editorial photo and letter layouts.
-- Admin Studio prototype for layouts, timeline, security indicators and invitations.
+- Native login/create-owner screen.
+- Admin Studio prototype for layouts, timeline, security indicators, invitations and Drive uploads.
 - TanStack Query, Zustand, React Hook Form, Zod, GSAP and lucide icons.
