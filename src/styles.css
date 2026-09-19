@@ -426,21 +426,38 @@ h3 {
   margin-top: 10px;
 }
 
-.photo-button span {
+.photo-meta {
   background: linear-gradient(0deg, rgba(25, 22, 19, 0.72), transparent);
   bottom: 0;
   color: #fffaf0;
-  display: grid;
-  font-family: "Segoe Print", "Bradley Hand ITC", cursive;
-  font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   left: 0;
   margin: 0;
-  min-height: 42%;
-  padding: 70px 16px 14px;
-  place-items: end start;
+  min-height: 34%;
+  padding: 58px 16px 14px;
   pointer-events: none;
   position: absolute;
   right: 0;
+  top: auto;
+  justify-content: flex-end;
+}
+
+.photo-meta strong {
+  color: inherit;
+  display: block;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1rem, 2.1vw, 1.45rem);
+  line-height: 1.05;
+}
+
+.photo-meta small {
+  color: rgba(255, 250, 240, 0.9);
+  display: block;
+  font-family: "Segoe Print", "Bradley Hand ITC", cursive;
+  font-size: clamp(0.78rem, 1.2vw, 0.95rem);
+  line-height: 1.35;
 }
 
 .photo-button:hover {
@@ -485,15 +502,17 @@ h3 {
 }
 
 .photo-page {
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
 }
 
 .hero-photo {
   aspect-ratio: 4 / 5;
   display: block;
-  max-height: min(72%, 440px);
+  max-height: 100%;
   min-height: 0;
   position: relative;
+  width: min(100%, 430px);
 }
 
 .hero-photo img {
@@ -517,9 +536,11 @@ h3 {
 
 .photo-grid {
   display: grid;
+  flex: 1;
   gap: 16px;
   grid-template-columns: 1fr 1fr;
   min-width: 0;
+  width: 100%;
 }
 
 .photo-grid .photo-button,

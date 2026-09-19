@@ -766,24 +766,25 @@ function SpreadPage({
     const slots = Array.from({ length: getLayoutCapacity(page.layout) })
     return (
       <article className={`book-page collage-page ${page.layout === 'ThreePhotos' ? 'three-photo-page' : ''} ${sideClass}`}>
-        <div className="page-copy">
-          <p className="eyebrow">{page.dateLabel}</p>
-          <h2>{page.title}</h2>
-        </div>
         <div className={page.layout === 'ThreePhotos' ? 'photo-grid photo-grid-three' : 'photo-grid'}>
           {slots.map((_, index) => {
             const photo = page.photos[index]
             return photo ? (
-              <button className="photo-frame photo-button" key={photo.id} onClick={() => onPhotoOpen(photo)} type="button">
+              <button
+                aria-label={`Open ${photo.alt || photo.caption || `photo ${index + 1}`}`}
+                className="photo-frame photo-button"
+                key={photo.id}
+                onClick={() => onPhotoOpen(photo)}
+                type="button"
+              >
                 <img src={mediaUrl(photo.url)} alt={photo.alt} />
-                {photo.caption && <span>{photo.caption}</span>}
+                <PhotoMeta photo={photo} />
               </button>
             ) : (
               <EmptyPhotoSlot key={index} label={`Photo ${index + 1}`} />
             )
           })}
         </div>
-        <p>{page.text}</p>
       </article>
     )
   }
@@ -791,19 +792,32 @@ function SpreadPage({
   return (
     <article className={`book-page photo-page ${sideClass}`}>
       {firstPhoto ? (
-        <button className="photo-frame hero-photo photo-button" onClick={() => onPhotoOpen(firstPhoto)} type="button">
+        <button
+          aria-label={`Open ${firstPhoto.alt || firstPhoto.caption || 'photo'}`}
+          className="photo-frame hero-photo photo-button"
+          onClick={() => onPhotoOpen(firstPhoto)}
+          type="button"
+        >
           <img src={mediaUrl(firstPhoto.url)} alt={firstPhoto.alt} />
-          {firstPhoto.caption && <span>{firstPhoto.caption}</span>}
+          <PhotoMeta photo={firstPhoto} />
         </button>
       ) : (
         <EmptyPhotoSlot label="Photo" />
       )}
-      <div className="page-copy">
-        <p className="eyebrow">{page.dateLabel}</p>
-        <h2>{page.title}</h2>
-        <p>{page.text}</p>
-      </div>
     </article>
+  )
+}
+
+function PhotoMeta({ photo }: { photo: Photo }) {
+  if (!photo.alt && !photo.caption) {
+    return null
+  }
+
+  return (
+    <span className="photo-meta">
+      {photo.alt && <strong>{photo.alt}</strong>}
+      {photo.caption && <small>{photo.caption}</small>}
+    </span>
   )
 }
 
