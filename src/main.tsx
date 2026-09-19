@@ -239,11 +239,21 @@ async function uploadPhoto(albumId: string, pageId: string, file: File): Promise
   })
 
   if (!response.ok) {
-    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
-    throw new Error(problem?.error ?? problem?.detail ?? 'Upload failed')
+    throw new Error(await readProblemMessage(response, 'Upload failed'))
   }
 
   return (await response.json()) as UploadPhotoResponse
+}
+
+async function readProblemMessage(response: Response, fallback: string) {
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (contentType.includes('application/json') || contentType.includes('application/problem+json')) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string; title?: string } | null
+    return problem?.error ?? problem?.detail ?? problem?.title ?? fallback
+  }
+
+  const text = await response.text().catch(() => '')
+  return text || fallback
 }
 
 async function fetchPhotoLibrary(albumId: string): Promise<PhotoLibraryItem[]> {
