@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import HTMLFlipBook from 'react-pageflip'
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query'
@@ -69,115 +69,61 @@ type AppMode = 'viewer' | 'admin'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 let csrfToken: string | null = null
+const layoutOptions = ['FullPhoto', 'PhotoWithCaption', 'TwoPhotos', 'Letter', 'Milestone', 'Timeline']
 
 const fallbackAlbum: Album = {
   id: '018f4b44-6f15-7a45-a810-a1168d98c041',
   title: "Pablo's Album",
   subtitle: 'A private family book for the moments that become home.',
-  description: 'A premium album viewer and admin studio prototype built from the technical guide.',
+  description: "A family album ready for Pablo's real photos, notes and milestones.",
   theme: 'classic-warm',
-  coverPhotoUrl: 'https://images.unsplash.com/photo-1519689680058-324335c77eba?auto=format&fit=crop&w=1800&q=85',
+  coverPhotoUrl: '',
   pages: [
     {
       id: 'p1',
       pageNumber: 1,
       layout: 'FullPhoto',
-      title: 'Before You',
-      dateLabel: 'Chapter 00',
-      text: 'A quiet page for the little rituals, notes and photographs that made room for Pablo before the first hello.',
-      photos: [
-        {
-          id: 'ph1',
-          url: 'https://images.unsplash.com/photo-1491013516836-7db643ee125a?auto=format&fit=crop&w=1600&q=85',
-          alt: 'A warm family moment near a window.',
-          caption: 'Waiting for you with a house already full of stories.',
-          storageProvider: 'SEED',
-          storageKey: 'before-you-cover',
-          sortOrder: 1,
-        },
-      ],
+      title: 'Page One',
+      dateLabel: 'Family archive',
+      text: "Choose a layout in Studio and add Pablo's real memories here.",
+      photos: [],
     },
     {
       id: 'p2',
       pageNumber: 2,
       layout: 'PhotoWithCaption',
-      title: 'Hello World',
-      dateLabel: 'The first chapter',
-      text: 'The album opens with a first portrait, a date, and space for the words everyone will want to read again years from now.',
-      photos: [
-        {
-          id: 'ph2',
-          url: 'https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&w=1600&q=85',
-          alt: 'A baby resting peacefully.',
-          caption: 'The first hello.',
-          storageProvider: 'SEED',
-          storageKey: 'hello-world',
-          sortOrder: 1,
-        },
-      ],
+      title: 'Page Two',
+      dateLabel: 'Family archive',
+      text: 'This page is ready for a photo, caption and date.',
+      photos: [],
     },
     {
       id: 'p3',
       pageNumber: 3,
       layout: 'TwoPhotos',
-      title: 'Small Discoveries',
-      dateLabel: 'First month',
-      text: 'Two-photo spreads make room for comparisons: tiny hands, sleepy mornings, and the details that change faster than anyone expects.',
-      photos: [
-        {
-          id: 'ph3',
-          url: 'https://images.unsplash.com/photo-1546015720-b8b30df5aa27?auto=format&fit=crop&w=1200&q=85',
-          alt: 'A close family detail.',
-          caption: 'Tiny hands.',
-          storageProvider: 'SEED',
-          storageKey: 'small-discoveries-1',
-          sortOrder: 1,
-        },
-        {
-          id: 'ph4',
-          url: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=1200&q=85',
-          alt: 'Soft toys in a nursery.',
-          caption: 'A room becoming his.',
-          storageProvider: 'SEED',
-          storageKey: 'small-discoveries-2',
-          sortOrder: 2,
-        },
-      ],
+      title: 'Page Three',
+      dateLabel: 'Family archive',
+      text: 'Use a two-photo spread for before/after moments, details or comparisons.',
+      photos: [],
     },
     {
       id: 'p4',
       pageNumber: 4,
       layout: 'Letter',
-      title: 'A Letter for Later',
+      title: 'Letter Page',
       dateLabel: 'Read this when you are older',
-      text: 'Pablo, this page is for the words that do not fit under a photograph. The app treats letters as first-class memories so the family can preserve voice, context and tenderness, not only images.',
+      text: 'Write a family note here when the album content is ready.',
       photos: [],
     },
   ],
   memories: [
     {
       id: 'm1',
-      title: 'Album started',
-      description: 'The first private prototype is ready to grow into the real family album.',
+      title: 'Album created',
+      description: 'The album structure is ready for real family content.',
       date: '2026-09-18',
       type: 'Milestone',
       linkedPageId: 'p1',
-    },
-    {
-      id: 'm2',
-      title: 'Viewer experience',
-      description: 'Page flip, editorial spreads and responsive reading are part of the first usable slice.',
-      date: '2026-09-18',
-      type: 'Experience',
-      linkedPageId: 'p2',
-    },
-    {
-      id: 'm3',
-      title: 'Admin Studio',
-      description: 'Layouts, pages, invitations and audit notes are visible for the owner workflow.',
-      date: '2026-09-18',
-      type: 'Admin',
-      linkedPageId: 'p3',
     },
   ],
 }
@@ -473,19 +419,31 @@ function AlbumViewer({ album }: { album: Album }) {
       return
     }
 
-    gsap.fromTo(
-      heroRef.current.querySelectorAll('.page-copy, .photo-frame, .letter-body'),
-      { y: 18, opacity: 0 },
-      { y: 0, opacity: 1, stagger: 0.06, duration: 0.65, ease: 'power3.out' },
+    const timeline = gsap.timeline()
+    timeline.fromTo(
+      heroRef.current,
+      { rotateY: -3, scale: 0.985 },
+      { rotateY: 0, scale: 1, duration: 0.55, ease: 'power2.out' },
+    )
+    timeline.fromTo(
+      heroRef.current.querySelectorAll('.page-copy, .photo-frame, .letter-body, .empty-photo-slot, .cover-mark'),
+      { y: 16, opacity: 0 },
+      { y: 0, opacity: 1, stagger: 0.05, duration: 0.45, ease: 'power3.out' },
+      0.08,
+    )
+    timeline.fromTo(
+      heroRef.current.querySelector('.page-turn-sheen'),
+      { xPercent: -120, opacity: 0 },
+      { xPercent: 120, opacity: 0.28, duration: 0.62, ease: 'power2.out' },
+      0,
     )
   }
 
   return (
     <section className="viewer">
-      <div className="viewer-copy">
-        <p className="eyebrow">Private family album</p>
+      <div className="viewer-header">
+        <p className="eyebrow">Family album</p>
         <h1>{album.title}</h1>
-        <p>{album.subtitle}</p>
         <div className="viewer-actions">
           <button onClick={() => setPageIndex(Math.max(0, pageIndex - 1))} type="button">
             Previous
@@ -501,6 +459,7 @@ function AlbumViewer({ album }: { album: Album }) {
       </div>
 
       <div className="book-stage" ref={heroRef}>
+        <div className="page-turn-sheen" aria-hidden="true" />
         <HTMLFlipBook
           width={430}
           height={590}
@@ -531,7 +490,7 @@ function AlbumViewer({ album }: { album: Album }) {
           disableFlipByClick={false}
         >
           {pages.map((page) => (
-            <SpreadPage key={page.id} page={page} coverPhotoUrl={album.coverPhotoUrl} />
+            <SpreadPage key={page.id} page={page} />
           ))}
         </HTMLFlipBook>
       </div>
@@ -547,28 +506,20 @@ function coverPage(album: Album): AlbumPage {
     title: album.title,
     dateLabel: 'Family archive',
     text: album.description,
-    photos: [
-      {
-        id: 'cover-photo',
-        url: album.coverPhotoUrl,
-        alt: 'Family album cover image.',
-        caption: album.subtitle,
-        storageProvider: 'SEED',
-        storageKey: 'cover',
-        sortOrder: 0,
-      },
-    ],
+    photos: [],
   }
 }
 
-function SpreadPage({ page, coverPhotoUrl }: { page: AlbumPage; coverPhotoUrl: string }) {
+function SpreadPage({ page }: { page: AlbumPage }) {
   const firstPhoto = page.photos[0]
 
   if (page.layout === 'Cover') {
     return (
       <article className="book-page cover-page">
-        <img src={coverPhotoUrl} alt="" />
-        <div className="cover-overlay">
+        <div className="cover-paper">
+          <div className="cover-mark" aria-hidden="true">
+            PA
+          </div>
           <p>{page.dateLabel}</p>
           <h2>{page.title}</h2>
           <span>{page.text}</span>
@@ -597,12 +548,14 @@ function SpreadPage({ page, coverPhotoUrl }: { page: AlbumPage; coverPhotoUrl: s
           <h2>{page.title}</h2>
         </div>
         <div className="photo-grid">
-          {page.photos.map((photo) => (
-            <figure className="photo-frame" key={photo.id}>
-              <img src={photo.url} alt={photo.alt} />
-              <figcaption>{photo.caption}</figcaption>
-            </figure>
-          ))}
+          {page.photos.length > 0
+            ? page.photos.map((photo) => (
+                <figure className="photo-frame" key={photo.id}>
+                  <img src={photo.url} alt={photo.alt} />
+                  <figcaption>{photo.caption}</figcaption>
+                </figure>
+              ))
+            : [0, 1].map((slot) => <EmptyPhotoSlot key={slot} label={`Photo ${slot + 1}`} />)}
         </div>
         <p>{page.text}</p>
       </article>
@@ -611,11 +564,13 @@ function SpreadPage({ page, coverPhotoUrl }: { page: AlbumPage; coverPhotoUrl: s
 
   return (
     <article className="book-page photo-page">
-      {firstPhoto && (
+      {firstPhoto ? (
         <figure className="photo-frame hero-photo">
           <img src={firstPhoto.url} alt={firstPhoto.alt} />
           <figcaption>{firstPhoto.caption}</figcaption>
         </figure>
+      ) : (
+        <EmptyPhotoSlot label="Photo" />
       )}
       <div className="page-copy">
         <p className="eyebrow">{page.dateLabel}</p>
@@ -623,6 +578,15 @@ function SpreadPage({ page, coverPhotoUrl }: { page: AlbumPage; coverPhotoUrl: s
         <p>{page.text}</p>
       </div>
     </article>
+  )
+}
+
+function EmptyPhotoSlot({ label }: { label: string }) {
+  return (
+    <div className="empty-photo-slot">
+      <ImagePlus size={28} aria-hidden="true" />
+      <span>{label}</span>
+    </div>
   )
 }
 
@@ -634,6 +598,23 @@ function AdminStudio({ album }: { album: Album }) {
   const [invites, setInvites] = useState<InviteForm[]>([])
   const [uploadStatus, setUploadStatus] = useState<string>('Ready to upload to Google Drive.')
   const [isUploading, setIsUploading] = useState(false)
+  const [workingPages, setWorkingPages] = useState<AlbumPage[]>(album.pages)
+  const [selectedPageId, setSelectedPageId] = useState<string>(album.pages[0]?.id ?? '')
+
+  useEffect(() => {
+    setWorkingPages(album.pages)
+    setSelectedPageId(album.pages[0]?.id ?? '')
+  }, [album])
+
+  const selectedPage = workingPages.find((page) => page.id === selectedPageId) ?? workingPages[0]
+
+  function assignLayout(layout: string) {
+    if (!selectedPage) {
+      return
+    }
+
+    setWorkingPages((pages) => pages.map((page) => (page.id === selectedPage.id ? { ...page, layout } : page)))
+  }
 
   function submitInvite(data: InviteForm) {
     setInvites((current) => [data, ...current])
@@ -673,12 +654,18 @@ function AdminStudio({ album }: { album: Album }) {
     <section className="studio">
       <aside className="studio-sidebar">
         <h2>Layouts</h2>
-        {['FullPhoto', 'PhotoWithCaption', 'TwoPhotos', 'Letter', 'Milestone'].map((layout) => (
-          <button key={layout} type="button">
+        {layoutOptions.map((layout) => (
+          <button className={selectedPage?.layout === layout ? 'active' : ''} key={layout} onClick={() => assignLayout(layout)} type="button">
             <LayoutTemplate size={17} aria-hidden="true" />
             {layout}
           </button>
         ))}
+        {selectedPage && (
+          <div className="selected-page-note">
+            <strong>Editing page {String(selectedPage.pageNumber).padStart(2, '0')}</strong>
+            <span>{selectedPage.title}</span>
+          </div>
+        )}
       </aside>
 
       <div className="studio-preview">
@@ -687,16 +674,16 @@ function AdminStudio({ album }: { album: Album }) {
             <p className="eyebrow">Album engine</p>
             <h1>{album.title}</h1>
           </div>
-          <span className="upload-note">Images over 10 MB are compressed before Drive storage.</span>
+          <span className="upload-note">Choose a page, assign its layout, then upload the real photo assets.</span>
         </div>
 
         <div className="admin-grid">
-          {album.pages.map((page) => (
-            <article className="page-card" key={page.id}>
+          {workingPages.map((page) => (
+            <button className={`page-card ${selectedPage?.id === page.id ? 'selected' : ''}`} key={page.id} onClick={() => setSelectedPageId(page.id)} type="button">
               <span>{String(page.pageNumber).padStart(2, '0')}</span>
               <h3>{page.title}</h3>
               <p>{page.layout}</p>
-            </article>
+            </button>
           ))}
         </div>
 
@@ -737,7 +724,7 @@ function AdminStudio({ album }: { album: Album }) {
           </span>
           <span>
             <ImagePlus size={17} aria-hidden="true" />
-            {album.pages.reduce((total, page) => total + page.photos.length, 0)} photos
+            {workingPages.reduce((total, page) => total + page.photos.length, 0)} photos
           </span>
         </div>
 
