@@ -324,6 +324,7 @@ async function login(data: AuthForm): Promise<AuthUser> {
     throw new Error('Email or password is incorrect.')
   }
 
+  csrfToken = null
   return (await response.json()) as AuthUser
 }
 
