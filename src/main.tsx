@@ -20,10 +20,12 @@ import {
   LogOut,
   MailPlus,
   Palette,
+  Plus,
   RotateCcw,
   Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UploadCloud,
   UserPlus,
   X,
@@ -263,6 +265,32 @@ async function updatePageLayout(albumId: string, pageId: string, layout: string)
   if (!response.ok) {
     const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
     throw new Error(problem?.error ?? problem?.detail ?? 'Layout update failed')
+  }
+}
+
+async function addAlbumPage(albumId: string, layout = 'FullPhoto'): Promise<AlbumPage> {
+  const response = await apiFetch(`/api/albums/${albumId}/pages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout }),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Page creation failed')
+  }
+
+  return (await response.json()) as AlbumPage
+}
+
+async function deleteAlbumPage(albumId: string, pageId: string): Promise<void> {
+  const response = await apiFetch(`/api/albums/${albumId}/pages/${pageId}`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Page deletion failed')
   }
 }
 
@@ -895,6 +923,7 @@ function AdminStudio({ album }: { album: Album }) {
   const [photoTitle, setPhotoTitle] = useState('')
   const [photoCaption, setPhotoCaption] = useState('')
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
+  const [isPageMutating, setIsPageMutating] = useState(false)
   const photoLibrary = useQuery({
     queryKey: ['photo-library', album.id],
     queryFn: () => fetchPhotoLibrary(album.id),
@@ -913,6 +942,7 @@ function AdminStudio({ album }: { album: Album }) {
   const selectedPhoto = libraryPhotos.find((photo) => photo.id === selectedPhotoId) ?? selectedPage?.photos[0] ?? libraryPhotos[0]
   const orderedPagePhotos = [...(selectedPage?.photos ?? [])].sort((left, right) => left.sortOrder - right.sortOrder)
   const filledSlots = orderedPagePhotos.length
+  const canDeleteSelectedPage = Boolean(selectedPage) && workingPages.length > 1 && selectedPage.photos.length === 0
 
   useEffect(() => {
     if (!selectedPhoto) {
@@ -946,6 +976,62 @@ function AdminStudio({ album }: { album: Album }) {
     } catch (error) {
       setStudioStatus(error instanceof Error ? error.message : 'Layout update failed.')
       setWorkingPages(album.pages)
+    }
+  }
+
+  async function createPage() {
+    setIsPageMutating(true)
+    setStudioStatus('Creando nueva pagina...')
+    try {
+      const page = await addAlbumPage(album.id, 'FullPhoto')
+      setSelectedPageId(page.id)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
+      setStudioStatus(`Pagina ${String(page.pageNumber).padStart(2, '0')} creada.`)
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Page creation failed.')
+    } finally {
+      setIsPageMutating(false)
+    }
+  }
+
+  async function removeSelectedPage() {
+    if (!selectedPage) {
+      return
+    }
+
+    if (!canDeleteSelectedPage) {
+      setStudioStatus(
+        selectedPage.photos.length > 0
+          ? 'Mueve las fotos de esta pagina antes de eliminarla.'
+          : 'El album debe conservar al menos una pagina.',
+      )
+      return
+    }
+
+    const previousPage = workingPages
+      .filter((page) => page.id !== selectedPage.id)
+      .find((page) => page.pageNumber >= selectedPage.pageNumber)
+      ?? workingPages.filter((page) => page.id !== selectedPage.id).at(-1)
+
+    setIsPageMutating(true)
+    setStudioStatus('Eliminando pagina...')
+    try {
+      await deleteAlbumPage(album.id, selectedPage.id)
+      if (previousPage) {
+        setSelectedPageId(previousPage.id)
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
+      setStudioStatus('Pagina eliminada.')
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Page deletion failed.')
+    } finally {
+      setIsPageMutating(false)
     }
   }
 
@@ -1041,6 +1127,10 @@ function AdminStudio({ album }: { album: Album }) {
           <p className="eyebrow">Studio</p>
           <h2>Paginas</h2>
         </div>
+        <button className="page-action-button" disabled={isPageMutating} onClick={createPage} type="button">
+          <Plus size={17} aria-hidden="true" />
+          Agregar pagina
+        </button>
         <div className="studio-page-list">
           {workingPages.map((page) => (
             <button className={`studio-page-item ${selectedPage?.id === page.id ? 'active' : ''}`} key={page.id} onClick={() => setSelectedPageId(page.id)} type="button">
@@ -1116,6 +1206,22 @@ function AdminStudio({ album }: { album: Album }) {
             <CalendarDays size={17} aria-hidden="true" />
             {selectedPage?.dateLabel || 'Sin fecha'}
           </span>
+          <button
+            className="delete-page-button"
+            disabled={!canDeleteSelectedPage || isPageMutating}
+            onClick={removeSelectedPage}
+            title={
+              selectedPage?.photos.length
+                ? 'Mueve las fotos antes de eliminar esta pagina.'
+                : workingPages.length <= 1
+                  ? 'El album debe conservar al menos una pagina.'
+                  : 'Eliminar pagina vacia'
+            }
+            type="button"
+          >
+            <Trash2 size={17} aria-hidden="true" />
+            Eliminar pagina
+          </button>
         </div>
       </div>
 

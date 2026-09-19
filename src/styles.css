@@ -51,6 +51,11 @@ button.active {
   color: #191613;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .app-shell {
   min-height: 100svh;
 }
@@ -572,6 +577,12 @@ h3 {
   gap: 10px;
 }
 
+.page-action-button {
+  background: #2f3f4c;
+  justify-content: center;
+  width: 100%;
+}
+
 .studio-page-item {
   align-items: start;
   background: #f1e7d5;
@@ -783,6 +794,7 @@ h3 {
 }
 
 .studio-page-meta span,
+.delete-page-button,
 .security-list span,
 .invite-list span {
   align-items: center;
@@ -792,6 +804,16 @@ h3 {
   display: flex;
   gap: 8px;
   padding: 10px;
+}
+
+.delete-page-button {
+  border-color: rgba(155, 53, 44, 0.18);
+  color: #7d2f27;
+}
+
+.delete-page-button:hover:not(:disabled) {
+  background: #f4d8d2;
+  color: #5f1e18;
 }
 
 .studio-upload {
