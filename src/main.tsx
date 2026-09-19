@@ -9,8 +9,11 @@ import gsap from 'gsap'
 import {
   BookOpen,
   CalendarDays,
+  Captions,
+  CheckCircle2,
   Eye,
   ImagePlus,
+  Images,
   KeyRound,
   LayoutTemplate,
   Lock,
@@ -18,6 +21,7 @@ import {
   MailPlus,
   Palette,
   RotateCcw,
+  Save,
   ShieldCheck,
   Sparkles,
   UploadCloud,
@@ -36,6 +40,11 @@ type Photo = {
   storageProvider: string
   storageKey: string
   sortOrder: number
+}
+
+type PhotoLibraryItem = Photo & {
+  pageId: string
+  pageNumber: number
 }
 
 type AlbumPage = {
@@ -80,7 +89,11 @@ type DragState = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 let csrfToken: string | null = null
-const layoutOptions = ['FullPhoto', 'PhotoWithCaption', 'TwoPhotos', 'Letter', 'Milestone', 'Timeline']
+const layoutOptions = [
+  { id: 'FullPhoto', label: '1 foto', capacity: 1, description: 'Ocupa toda la pagina' },
+  { id: 'TwoPhotos', label: '2 fotos', capacity: 2, description: 'Dos fotos del mismo tamano' },
+  { id: 'ThreePhotos', label: '3 fotos', capacity: 3, description: 'Una grande y dos pequenas' },
+]
 
 const fallbackAlbum: Album = {
   id: '018f4b44-6f15-7a45-a810-a1168d98c041',
@@ -231,6 +244,15 @@ async function uploadPhoto(albumId: string, pageId: string, file: File): Promise
   return (await response.json()) as UploadPhotoResponse
 }
 
+async function fetchPhotoLibrary(albumId: string): Promise<PhotoLibraryItem[]> {
+  const response = await apiFetch(`/api/albums/${albumId}/photos`)
+  if (!response.ok) {
+    throw new Error('Photo library unavailable')
+  }
+
+  return (await response.json()) as PhotoLibraryItem[]
+}
+
 async function updatePageLayout(albumId: string, pageId: string, layout: string): Promise<void> {
   const response = await apiFetch(`/api/albums/${albumId}/pages/${pageId}/layout`, {
     method: 'PUT',
@@ -241,6 +263,32 @@ async function updatePageLayout(albumId: string, pageId: string, layout: string)
   if (!response.ok) {
     const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
     throw new Error(problem?.error ?? problem?.detail ?? 'Layout update failed')
+  }
+}
+
+async function assignPhotoToPage(albumId: string, pageId: string, photoId: string, sortOrder: number): Promise<void> {
+  const response = await apiFetch(`/api/albums/${albumId}/pages/${pageId}/photos/${photoId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sortOrder }),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Photo placement failed')
+  }
+}
+
+async function updatePhotoDetails(photoId: string, data: { alt: string; caption: string }): Promise<void> {
+  const response = await apiFetch(`/api/photos/${photoId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Photo update failed')
   }
 }
 
@@ -676,22 +724,26 @@ function SpreadPage({
     )
   }
 
-  if (page.layout === 'TwoPhotos') {
+  if (page.layout === 'TwoPhotos' || page.layout === 'ThreePhotos') {
+    const slots = Array.from({ length: getLayoutCapacity(page.layout) })
     return (
-      <article className={`book-page collage-page ${sideClass}`}>
+      <article className={`book-page collage-page ${page.layout === 'ThreePhotos' ? 'three-photo-page' : ''} ${sideClass}`}>
         <div className="page-copy">
           <p className="eyebrow">{page.dateLabel}</p>
           <h2>{page.title}</h2>
         </div>
-        <div className="photo-grid">
-          {page.photos.length > 0
-            ? page.photos.map((photo) => (
-                <button className="photo-frame photo-button" key={photo.id} onClick={() => onPhotoOpen(photo)} type="button">
-                  <img src={photo.url} alt={photo.alt} />
-                  {photo.caption && <span>{photo.caption}</span>}
-                </button>
-              ))
-            : [0, 1].map((slot) => <EmptyPhotoSlot key={slot} label={`Photo ${slot + 1}`} />)}
+        <div className={page.layout === 'ThreePhotos' ? 'photo-grid photo-grid-three' : 'photo-grid'}>
+          {slots.map((_, index) => {
+            const photo = page.photos[index]
+            return photo ? (
+              <button className="photo-frame photo-button" key={photo.id} onClick={() => onPhotoOpen(photo)} type="button">
+                <img src={photo.url} alt={photo.alt} />
+                {photo.caption && <span>{photo.caption}</span>}
+              </button>
+            ) : (
+              <EmptyPhotoSlot key={index} label={`Photo ${index + 1}`} />
+            )
+          })}
         </div>
         <p>{page.text}</p>
       </article>
@@ -715,6 +767,10 @@ function SpreadPage({
       </div>
     </article>
   )
+}
+
+function getLayoutCapacity(layout: string) {
+  return layoutOptions.find((option) => option.id === layout)?.capacity ?? 1
 }
 
 function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }) {
@@ -830,29 +886,108 @@ function AdminStudio({ album }: { album: Album }) {
   })
   const [invites, setInvites] = useState<InviteForm[]>([])
   const [uploadStatus, setUploadStatus] = useState<string>('Ready to upload to Google Drive.')
+  const [studioStatus, setStudioStatus] = useState<string>('Arrastra fotos desde la biblioteca hacia la pagina seleccionada.')
   const [isUploading, setIsUploading] = useState(false)
   const [workingPages, setWorkingPages] = useState<AlbumPage[]>(album.pages)
   const [selectedPageId, setSelectedPageId] = useState<string>(album.pages[0]?.id ?? '')
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string>('')
+  const [draggedPhotoId, setDraggedPhotoId] = useState<string>('')
+  const [photoTitle, setPhotoTitle] = useState('')
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
+  const photoLibrary = useQuery({
+    queryKey: ['photo-library', album.id],
+    queryFn: () => fetchPhotoLibrary(album.id),
+    enabled: Boolean(album.id),
+    retry: false,
+  })
 
   useEffect(() => {
     setWorkingPages(album.pages)
-    setSelectedPageId(album.pages[0]?.id ?? '')
+    setSelectedPageId((current) => (album.pages.some((page) => page.id === current) ? current : album.pages[0]?.id ?? ''))
   }, [album])
 
   const selectedPage = workingPages.find((page) => page.id === selectedPageId) ?? workingPages[0]
+  const selectedLayout = layoutOptions.find((layout) => layout.id === selectedPage?.layout) ?? layoutOptions[0]
+  const libraryPhotos = photoLibrary.data ?? workingPages.flatMap((page) => page.photos.map((photo) => ({ ...photo, pageId: page.id, pageNumber: page.pageNumber })))
+  const selectedPhoto = libraryPhotos.find((photo) => photo.id === selectedPhotoId) ?? selectedPage?.photos[0] ?? libraryPhotos[0]
+  const orderedPagePhotos = [...(selectedPage?.photos ?? [])].sort((left, right) => left.sortOrder - right.sortOrder)
+  const filledSlots = orderedPagePhotos.length
+
+  useEffect(() => {
+    if (!selectedPhoto) {
+      setPhotoTitle('')
+      setPhotoCaption('')
+      return
+    }
+
+    setSelectedPhotoId(selectedPhoto.id)
+    setPhotoTitle(selectedPhoto.alt)
+    setPhotoCaption(selectedPhoto.caption)
+  }, [selectedPhoto?.id, selectedPhoto?.alt, selectedPhoto?.caption])
 
   async function assignLayout(layout: string) {
     if (!selectedPage) {
       return
     }
 
+    const nextCapacity = getLayoutCapacity(layout)
+    if (selectedPage.photos.length > nextCapacity) {
+      setStudioStatus(`Esta pagina tiene ${selectedPage.photos.length} fotos. Quita o mueve algunas antes de usar un layout de ${nextCapacity}.`)
+      return
+    }
+
     setWorkingPages((pages) => pages.map((page) => (page.id === selectedPage.id ? { ...page, layout } : page)))
+    setStudioStatus('Guardando layout...')
     try {
       await updatePageLayout(album.id, selectedPage.id, layout)
       await queryClient.invalidateQueries({ queryKey: ['album'] })
+      setStudioStatus('Layout guardado.')
     } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : 'Layout update failed.')
+      setStudioStatus(error instanceof Error ? error.message : 'Layout update failed.')
       setWorkingPages(album.pages)
+    }
+  }
+
+  async function dropPhotoOnSlot(event: React.DragEvent<HTMLDivElement>, slotIndex: number) {
+    event.preventDefault()
+    const photoId = event.dataTransfer.getData('photo/id') || draggedPhotoId
+    if (!photoId || !selectedPage) {
+      return
+    }
+
+    setStudioStatus('Ubicando foto en la pagina...')
+    try {
+      await assignPhotoToPage(album.id, selectedPage.id, photoId, slotIndex + 1)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
+      setSelectedPhotoId(photoId)
+      setStudioStatus('Foto ubicada y guardada.')
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Photo placement failed.')
+    } finally {
+      setDraggedPhotoId('')
+    }
+  }
+
+  async function savePhotoDetails(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedPhoto) {
+      return
+    }
+
+    setStudioStatus('Guardando titulo de foto...')
+    try {
+      await updatePhotoDetails(selectedPhoto.id, { alt: photoTitle, caption: photoCaption })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
+      setStudioStatus('Foto actualizada.')
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Photo update failed.')
     }
   }
 
@@ -888,7 +1023,10 @@ function AdminStudio({ album }: { album: Album }) {
         }`,
       )
       form.reset()
-      await queryClient.invalidateQueries({ queryKey: ['album'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : 'Upload failed.')
     } finally {
@@ -898,103 +1036,190 @@ function AdminStudio({ album }: { album: Album }) {
 
   return (
     <section className="studio">
-      <aside className="studio-sidebar">
-        <h2>Layouts</h2>
-        {layoutOptions.map((layout) => (
-          <button className={selectedPage?.layout === layout ? 'active' : ''} key={layout} onClick={() => assignLayout(layout)} type="button">
-            <LayoutTemplate size={17} aria-hidden="true" />
-            {layout}
-          </button>
-        ))}
-        {selectedPage && (
-          <div className="selected-page-note">
-            <strong>Editing page {String(selectedPage.pageNumber).padStart(2, '0')}</strong>
-            <span>{selectedPage.title}</span>
-          </div>
-        )}
+      <aside className="studio-sidebar studio-pages-panel">
+        <div className="studio-section-heading">
+          <p className="eyebrow">Studio</p>
+          <h2>Paginas</h2>
+        </div>
+        <div className="studio-page-list">
+          {workingPages.map((page) => (
+            <button className={`studio-page-item ${selectedPage?.id === page.id ? 'active' : ''}`} key={page.id} onClick={() => setSelectedPageId(page.id)} type="button">
+              <span>{String(page.pageNumber).padStart(2, '0')}</span>
+              <strong>{page.title}</strong>
+              <small>
+                {layoutOptions.find((layout) => layout.id === page.layout)?.label ?? page.layout} - {page.photos.length}/
+                {getLayoutCapacity(page.layout)}
+              </small>
+            </button>
+          ))}
+        </div>
       </aside>
 
-      <div className="studio-preview">
-        <div className="panel-heading">
+      <div className="studio-workspace">
+        <div className="studio-workspace-header">
           <div>
-            <p className="eyebrow">Album engine</p>
-            <h1>{album.title}</h1>
+            <p className="eyebrow">Pagina {String(selectedPage?.pageNumber ?? 0).padStart(2, '0')}</p>
+            <h1>{selectedPage?.title ?? album.title}</h1>
           </div>
-          <span className="upload-note">Choose a page, assign its layout, then upload the real photo assets.</span>
+          <span className="studio-status">{studioStatus}</span>
         </div>
 
-        <div className="admin-grid">
-          {workingPages.map((page) => (
-            <button className={`page-card ${selectedPage?.id === page.id ? 'selected' : ''}`} key={page.id} onClick={() => setSelectedPageId(page.id)} type="button">
-              <span>{String(page.pageNumber).padStart(2, '0')}</span>
-              <h3>{page.title}</h3>
-              <p>{page.layout}</p>
+        <div className="layout-toolbar" aria-label="Page layouts">
+          {layoutOptions.map((layout) => (
+            <button className={selectedPage?.layout === layout.id ? 'active' : ''} key={layout.id} onClick={() => assignLayout(layout.id)} type="button">
+              <LayoutTemplate size={17} aria-hidden="true" />
+              <span>
+                <strong>{layout.label}</strong>
+                <small>{layout.description}</small>
+              </span>
             </button>
           ))}
         </div>
 
-        <div className="timeline-panel">
-          <h2>Timeline</h2>
-          {album.memories.map((memory) => (
-            <div className="memory-row" key={memory.id}>
-              <CalendarDays size={17} aria-hidden="true" />
-              <div>
-                <strong>{memory.title}</strong>
-                <p>{memory.description}</p>
+        <div className={`studio-page-canvas layout-${selectedLayout.capacity}`} aria-label="Selected album page">
+          {Array.from({ length: selectedLayout.capacity }).map((_, index) => {
+            const photo = orderedPagePhotos[index]
+            return (
+              <div
+                className={`drop-slot ${photo ? 'filled' : ''}`}
+                key={index}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => dropPhotoOnSlot(event, index)}
+              >
+                {photo ? (
+                  <button className={selectedPhoto?.id === photo.id ? 'selected-photo' : ''} onClick={() => setSelectedPhotoId(photo.id)} type="button">
+                    <img src={photo.url} alt={photo.alt} />
+                    <span>{photo.alt || `Foto ${index + 1}`}</span>
+                  </button>
+                ) : (
+                  <div>
+                    <UploadCloud size={26} aria-hidden="true" />
+                    <strong>Soltar foto {index + 1}</strong>
+                    <small>{index === 0 && selectedLayout.capacity === 3 ? 'Esta sera la foto grande' : 'Arrastra desde la biblioteca'}</small>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
+        </div>
+
+        <div className="studio-page-meta">
+          <span>
+            <CheckCircle2 size={17} aria-hidden="true" />
+            Layout: {selectedLayout.label}
+          </span>
+          <span>
+            <Images size={17} aria-hidden="true" />
+            {filledSlots}/{selectedLayout.capacity} fotos en esta pagina
+          </span>
+          <span>
+            <CalendarDays size={17} aria-hidden="true" />
+            {selectedPage?.dateLabel || 'Sin fecha'}
+          </span>
         </div>
       </div>
 
-      <aside className="studio-sidebar right">
-        <form className="upload-form" onSubmit={submitPhotoUpload}>
-          <h2>Photos</h2>
+      <aside className="studio-sidebar studio-media-panel">
+        <form className="studio-upload" onSubmit={submitPhotoUpload}>
+          <div className="studio-section-heading">
+            <p className="eyebrow">Drive</p>
+            <h2>Fotos</h2>
+          </div>
           <input accept="image/jpeg,image/png,image/webp" name="file" type="file" />
-          <button disabled={isUploading} type="submit">
+          <button disabled={isUploading || !selectedPage} type="submit">
             <UploadCloud size={17} aria-hidden="true" />
-            {isUploading ? 'Uploading' : 'Upload image'}
+            {isUploading ? 'Subiendo' : `Subir a pagina ${selectedPage?.pageNumber ?? ''}`}
           </button>
           <small>{uploadStatus}</small>
         </form>
 
-        <h2>Security</h2>
-        <div className="security-list">
-          <span>
-            <ShieldCheck size={17} aria-hidden="true" />
-            Private by default
-          </span>
-          <span>
-            <Palette size={17} aria-hidden="true" />
-            Theme: {album.theme}
-          </span>
-          <span>
-            <ImagePlus size={17} aria-hidden="true" />
-            {workingPages.reduce((total, page) => total + page.photos.length, 0)} photos
-          </span>
+        <div className="photo-library">
+          <div className="library-heading">
+            <strong>Biblioteca</strong>
+            <span>{libraryPhotos.length} fotos</span>
+          </div>
+          {photoLibrary.isError && <small>No pude leer la biblioteca; uso las fotos del album cargado.</small>}
+          <div className="library-grid">
+            {libraryPhotos.map((photo) => (
+              <button
+                className={selectedPhoto?.id === photo.id ? 'active' : ''}
+                draggable
+                key={photo.id}
+                onClick={() => setSelectedPhotoId(photo.id)}
+                onDoubleClick={() => setPreviewPhoto(photo)}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData('photo/id', photo.id)
+                  setDraggedPhotoId(photo.id)
+                }}
+                type="button"
+              >
+                <img src={photo.url} alt={photo.alt} />
+                <span>Pag. {photo.pageNumber}</span>
+              </button>
+            ))}
+            {libraryPhotos.length === 0 && <p className="empty-library">Sube la primera foto para empezar a disenar las paginas.</p>}
+          </div>
         </div>
 
-        <form className="invite-form" onSubmit={handleSubmit(submitInvite)}>
-          <h2>Invite</h2>
-          <input placeholder="family@email.com" {...register('email')} />
-          <select {...register('role')}>
-            <option value="Viewer">Viewer</option>
-            <option value="Editor">Editor</option>
-          </select>
-          {formState.errors.email && <small>{formState.errors.email.message}</small>}
-          <button type="submit">
-            <MailPlus size={17} aria-hidden="true" />
-            Create invite
-          </button>
+        <form className="photo-editor" onSubmit={savePhotoDetails}>
+          <div className="library-heading">
+            <strong>Editar foto</strong>
+            <span>{selectedPhoto ? `Pag. ${'pageNumber' in selectedPhoto ? selectedPhoto.pageNumber : selectedPage?.pageNumber}` : 'Sin foto'}</span>
+          </div>
+          <label>
+            Titulo
+            <input disabled={!selectedPhoto} onChange={(event) => setPhotoTitle(event.target.value)} value={photoTitle} />
+          </label>
+          <label>
+            Caption
+            <textarea disabled={!selectedPhoto} onChange={(event) => setPhotoCaption(event.target.value)} rows={3} value={photoCaption} />
+          </label>
+          <div className="editor-actions">
+            <button disabled={!selectedPhoto} type="submit">
+              <Save size={17} aria-hidden="true" />
+              Guardar
+            </button>
+            <button disabled={!selectedPhoto} onClick={() => selectedPhoto && setPreviewPhoto(selectedPhoto)} type="button">
+              <Captions size={17} aria-hidden="true" />
+              Ver
+            </button>
+          </div>
         </form>
 
-        <div className="invite-list">
-          {invites.map((invite) => (
-            <span key={`${invite.email}-${invite.role}`}>
-              {invite.email} - {invite.role}
+        <details className="studio-details">
+          <summary>Seguridad e invitaciones</summary>
+          <div className="security-list">
+            <span>
+              <ShieldCheck size={17} aria-hidden="true" />
+              Privado para editar
             </span>
-          ))}
-        </div>
+            <span>
+              <Palette size={17} aria-hidden="true" />
+              Tema: {album.theme}
+            </span>
+          </div>
+          <form className="invite-form" onSubmit={handleSubmit(submitInvite)}>
+            <input placeholder="family@email.com" {...register('email')} />
+            <select {...register('role')}>
+              <option value="Viewer">Viewer</option>
+              <option value="Editor">Editor</option>
+            </select>
+            {formState.errors.email && <small>{formState.errors.email.message}</small>}
+            <button type="submit">
+              <MailPlus size={17} aria-hidden="true" />
+              Crear invitacion
+            </button>
+          </form>
+
+          <div className="invite-list">
+            {invites.map((invite) => (
+              <span key={`${invite.email}-${invite.role}`}>
+                {invite.email} - {invite.role}
+              </span>
+            ))}
+          </div>
+        </details>
+        {previewPhoto && <PhotoLightbox onClose={() => setPreviewPhoto(null)} photo={previewPhoto} />}
       </aside>
     </section>
   )
