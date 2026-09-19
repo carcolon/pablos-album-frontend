@@ -642,7 +642,8 @@ function AdminStudio({ album }: { album: Album }) {
 
   async function submitPhotoUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+    const form = event.currentTarget
+    const formData = new FormData(form)
     const file = formData.get('file')
     if (!(file instanceof File) || file.size === 0) {
       setUploadStatus('Choose an image first.')
@@ -660,7 +661,7 @@ function AdminStudio({ album }: { album: Album }) {
           result.wasCompressed ? ' after compression.' : '.'
         }`,
       )
-      event.currentTarget.reset()
+      form.reset()
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : 'Upload failed.')
     } finally {
