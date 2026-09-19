@@ -775,7 +775,7 @@ function SpreadPage({
             const photo = page.photos[index]
             return photo ? (
               <button className="photo-frame photo-button" key={photo.id} onClick={() => onPhotoOpen(photo)} type="button">
-                <img src={photo.url} alt={photo.alt} />
+                <img src={mediaUrl(photo.url)} alt={photo.alt} />
                 {photo.caption && <span>{photo.caption}</span>}
               </button>
             ) : (
@@ -792,7 +792,7 @@ function SpreadPage({
     <article className={`book-page photo-page ${sideClass}`}>
       {firstPhoto ? (
         <button className="photo-frame hero-photo photo-button" onClick={() => onPhotoOpen(firstPhoto)} type="button">
-          <img src={firstPhoto.url} alt={firstPhoto.alt} />
+          <img src={mediaUrl(firstPhoto.url)} alt={firstPhoto.alt} />
           {firstPhoto.caption && <span>{firstPhoto.caption}</span>}
         </button>
       ) : (
@@ -809,6 +809,14 @@ function SpreadPage({
 
 function getLayoutCapacity(layout: string) {
   return layoutOptions.find((option) => option.id === layout)?.capacity ?? 1
+}
+
+function mediaUrl(url: string) {
+  if (!url || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url
+  }
+
+  return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`
 }
 
 function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }) {
@@ -898,7 +906,7 @@ function PhotoLightbox({ onClose, photo }: { onClose: () => void; photo: Photo }
           <img
             alt={photo.alt}
             draggable={false}
-            src={photo.url}
+            src={mediaUrl(photo.url)}
             style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
           />
         </div>
@@ -1188,7 +1196,7 @@ function AdminStudio({ album }: { album: Album }) {
               >
                 {photo ? (
                   <button className={selectedPhoto?.id === photo.id ? 'selected-photo' : ''} onClick={() => setSelectedPhotoId(photo.id)} type="button">
-                    <img src={photo.url} alt={photo.alt} />
+                    <img src={mediaUrl(photo.url)} alt={photo.alt} />
                     <span>{photo.alt || `Foto ${index + 1}`}</span>
                   </button>
                 ) : (
@@ -1269,7 +1277,7 @@ function AdminStudio({ album }: { album: Album }) {
                 }}
                 type="button"
               >
-                <img src={photo.url} alt={photo.alt} />
+                <img src={mediaUrl(photo.url)} alt={photo.alt} />
                 <span>Pag. {photo.pageNumber}</span>
               </button>
             ))}
