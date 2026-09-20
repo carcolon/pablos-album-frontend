@@ -179,6 +179,23 @@ button:disabled {
   line-height: 1.35;
 }
 
+.auth-form .success-message,
+.invite-form .success-message {
+  color: #2f6f4f;
+}
+
+.secondary-action {
+  background: #f6eddb;
+  border-color: var(--line);
+  color: #2f3f4c;
+  justify-content: center;
+}
+
+.secondary-action:hover {
+  background: #eef2ec;
+  color: #2f3f4c;
+}
+
 .viewer {
   display: grid;
   gap: 24px;

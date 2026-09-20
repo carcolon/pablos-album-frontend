@@ -162,6 +162,21 @@ const inviteSchema = z.object({
 
 type InviteForm = z.infer<typeof inviteSchema>
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Use a valid email.'),
+})
+
+const resetPasswordSchema = z.object({
+  email: z.string().email('Use a valid email.'),
+  token: z.string().min(1, 'Reset token is required.'),
+  newPassword: z.string().min(10, 'Use at least 10 characters.'),
+})
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(10, 'Use the temporary password.'),
+  newPassword: z.string().min(10, 'Use at least 10 characters.'),
+})
+
 const loginSchema = z.object({
   email: z.string().email('Use a valid email.'),
   password: z.string().min(10, 'Use at least 10 characters.'),
@@ -182,6 +197,7 @@ type AuthUser = {
   email: string
   displayName: string
   roles: string[]
+  mustChangePassword: boolean
 }
 
 type AuthStatus = {
@@ -200,7 +216,7 @@ const useAlbumStore = create<{
   setPageIndex: (pageIndex: number) => void
   toggleSound: () => void
 }>((set) => ({
-  mode: 'viewer',
+  mode: new URLSearchParams(window.location.search).get('studio') === '1' ? 'admin' : 'viewer',
   pageIndex: 0,
   soundEnabled: false,
   setMode: (mode) => set({ mode }),
@@ -387,6 +403,56 @@ async function login(data: AuthForm): Promise<AuthUser> {
   return (await response.json()) as AuthUser
 }
 
+async function inviteUser(data: InviteForm): Promise<void> {
+  const response = await apiFetch('/api/auth/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readProblemMessage(response, 'Invitation failed.'))
+  }
+}
+
+async function forgotPassword(data: { email: string }): Promise<void> {
+  const response = await apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readProblemMessage(response, 'Password reset email failed.'))
+  }
+}
+
+async function resetPassword(data: { email: string; token: string; newPassword: string }): Promise<void> {
+  const response = await apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readProblemMessage(response, 'Password reset failed.'))
+  }
+}
+
+async function changePassword(data: { currentPassword: string; newPassword: string }): Promise<AuthUser> {
+  const response = await apiFetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readProblemMessage(response, 'Password change failed.'))
+  }
+
+  return (await response.json()) as AuthUser
+}
+
 async function logout(): Promise<void> {
   const response = await apiFetch('/api/auth/logout', { method: 'POST' })
   csrfToken = null
@@ -408,22 +474,43 @@ function App() {
   const auth = useQuery({ queryKey: ['auth'], queryFn: fetchAuthStatus, retry: false })
   const { data: album = fallbackAlbum, isError } = useAlbum()
   const { mode, setMode } = useAlbumStore()
+  const resetParams = new URLSearchParams(window.location.search)
+  const isResetPassword = resetParams.get('reset') === '1'
   const isAuthenticated = auth.data?.isAuthenticated == true
-  const canUseStudio = isAuthenticated && (auth.data?.user?.roles.includes('Owner') || auth.data?.user?.roles.includes('Editor'))
+  const mustChangePassword = auth.data?.user?.mustChangePassword == true
+  const canUseStudio =
+    isAuthenticated
+    && !mustChangePassword
+    && (auth.data?.user?.roles.includes('Owner') || auth.data?.user?.roles.includes('Editor'))
 
   return (
     <main className="app-shell">
       <TopBar mode={mode} setMode={setMode} apiOffline={isError} user={auth.data?.user ?? null} />
-      {mode === 'viewer' ? <AlbumViewer album={album} /> : canUseStudio ? <AdminStudio album={album} /> : <AuthScreen hasOwner={auth.data?.hasOwner ?? true} />}
+      {isResetPassword ? (
+        <ResetPasswordScreen email={resetParams.get('email') ?? ''} token={resetParams.get('token') ?? ''} />
+      ) : mode === 'viewer' ? (
+        <AlbumViewer album={album} />
+      ) : mustChangePassword ? (
+        <ChangePasswordScreen />
+      ) : canUseStudio ? (
+        <AdminStudio album={album} />
+      ) : (
+        <AuthScreen hasOwner={auth.data?.hasOwner ?? true} />
+      )}
     </main>
   )
 }
 
 function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
   const isRegister = !hasOwner
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
   const { register, handleSubmit, formState } = useForm<AuthForm>({
     resolver: zodResolver(isRegister ? registerOwnerSchema : loginSchema),
     defaultValues: { email: '', password: '', displayName: '' },
+  })
+  const forgotForm = useForm<{ email: string }>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: '' },
   })
   const mutation = useMutation({
     mutationFn: isRegister ? login : login,
@@ -432,6 +519,40 @@ function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
       await queryClient.invalidateQueries({ queryKey: ['album'] })
     },
   })
+  const forgotMutation = useMutation({
+    mutationFn: forgotPassword,
+  })
+
+  if (showForgotPassword) {
+    return (
+      <section className="auth-shell">
+        <section className="auth-panel">
+          <div className="auth-brand">
+            <BookOpen size={24} aria-hidden="true" />
+            <span>Pablo's Album</span>
+          </div>
+          <p className="eyebrow">Studio access</p>
+          <h1>Reset password</h1>
+          <form className="auth-form" onSubmit={forgotForm.handleSubmit((data) => forgotMutation.mutate(data))}>
+            <label>
+              Email
+              <input autoComplete="email" placeholder="family@email.com" type="email" {...forgotForm.register('email')} />
+              {forgotForm.formState.errors.email && <small>{forgotForm.formState.errors.email.message}</small>}
+            </label>
+            {forgotMutation.error && <small>{forgotMutation.error.message}</small>}
+            {forgotMutation.isSuccess && <small className="success-message">If that email exists, a reset link was sent.</small>}
+            <button disabled={forgotMutation.isPending} type="submit">
+              <MailPlus size={17} aria-hidden="true" />
+              {forgotMutation.isPending ? 'Sending' : 'Send reset link'}
+            </button>
+            <button className="secondary-action" onClick={() => setShowForgotPassword(false)} type="button">
+              Back to login
+            </button>
+          </form>
+        </section>
+      </section>
+    )
+  }
 
   return (
     <section className="auth-shell">
@@ -464,6 +585,99 @@ function AuthScreen({ hasOwner }: { hasOwner: boolean }) {
           <button disabled={mutation.isPending} type="submit">
             {isRegister ? <UserPlus size={17} aria-hidden="true" /> : <KeyRound size={17} aria-hidden="true" />}
             {mutation.isPending ? 'Working' : isRegister ? 'Create admin' : 'Log in'}
+          </button>
+          {!isRegister && (
+            <button className="secondary-action" onClick={() => setShowForgotPassword(true)} type="button">
+              Forgot password
+            </button>
+          )}
+        </form>
+      </section>
+    </section>
+  )
+}
+
+function ResetPasswordScreen({ email, token }: { email: string; token: string }) {
+  const { register, handleSubmit, formState } = useForm<{ email: string; token: string; newPassword: string }>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: { email, token, newPassword: '' },
+  })
+  const mutation = useMutation({
+    mutationFn: resetPassword,
+    onSuccess: () => {
+      window.history.replaceState({}, '', '/')
+    },
+  })
+
+  return (
+    <section className="auth-shell">
+      <section className="auth-panel">
+        <div className="auth-brand">
+          <BookOpen size={24} aria-hidden="true" />
+          <span>Pablo's Album</span>
+        </div>
+        <p className="eyebrow">Studio access</p>
+        <h1>Choose a new password</h1>
+        <form className="auth-form" onSubmit={handleSubmit((data) => mutation.mutate(data))}>
+          <label>
+            Email
+            <input autoComplete="email" type="email" {...register('email')} />
+            {formState.errors.email && <small>{formState.errors.email.message}</small>}
+          </label>
+          <input type="hidden" {...register('token')} />
+          <label>
+            New password
+            <input autoComplete="new-password" type="password" {...register('newPassword')} />
+            {formState.errors.newPassword && <small>{formState.errors.newPassword.message}</small>}
+          </label>
+          {mutation.error && <small>{mutation.error.message}</small>}
+          {mutation.isSuccess && <small className="success-message">Password changed. You can log in now.</small>}
+          <button disabled={mutation.isPending || mutation.isSuccess} type="submit">
+            <KeyRound size={17} aria-hidden="true" />
+            {mutation.isPending ? 'Changing' : 'Change password'}
+          </button>
+        </form>
+      </section>
+    </section>
+  )
+}
+
+function ChangePasswordScreen() {
+  const { register, handleSubmit, formState } = useForm<{ currentPassword: string; newPassword: string }>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: { currentPassword: '', newPassword: '' },
+  })
+  const mutation = useMutation({
+    mutationFn: changePassword,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['auth'] })
+    },
+  })
+
+  return (
+    <section className="auth-shell">
+      <section className="auth-panel">
+        <div className="auth-brand">
+          <BookOpen size={24} aria-hidden="true" />
+          <span>Pablo's Album</span>
+        </div>
+        <p className="eyebrow">Required step</p>
+        <h1>Change temporary password</h1>
+        <form className="auth-form" onSubmit={handleSubmit((data) => mutation.mutate(data))}>
+          <label>
+            Temporary password
+            <input autoComplete="current-password" type="password" {...register('currentPassword')} />
+            {formState.errors.currentPassword && <small>{formState.errors.currentPassword.message}</small>}
+          </label>
+          <label>
+            New password
+            <input autoComplete="new-password" type="password" {...register('newPassword')} />
+            {formState.errors.newPassword && <small>{formState.errors.newPassword.message}</small>}
+          </label>
+          {mutation.error && <small>{mutation.error.message}</small>}
+          <button disabled={mutation.isPending} type="submit">
+            <KeyRound size={17} aria-hidden="true" />
+            {mutation.isPending ? 'Changing' : 'Change password'}
           </button>
         </form>
       </section>
@@ -980,7 +1194,7 @@ function EmptyPhotoSlot({ label }: { label: string }) {
 function AdminStudio({ album }: { album: Album }) {
   const { register, handleSubmit, formState, reset } = useForm<InviteForm>({
     resolver: zodResolver(inviteSchema),
-    defaultValues: { email: '', role: 'Viewer' },
+    defaultValues: { email: '', role: 'Editor' },
   })
   const [invites, setInvites] = useState<InviteForm[]>([])
   const [uploadStatus, setUploadStatus] = useState<string>('Ready to upload to Google Drive.')
@@ -994,6 +1208,13 @@ function AdminStudio({ album }: { album: Album }) {
   const [photoCaption, setPhotoCaption] = useState('')
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
   const [isPageMutating, setIsPageMutating] = useState(false)
+  const inviteMutation = useMutation({
+    mutationFn: inviteUser,
+    onSuccess: (_, data) => {
+      setInvites((current) => [data, ...current])
+      reset({ email: '', role: 'Editor' })
+    },
+  })
   const photoLibrary = useQuery({
     queryKey: ['photo-library', album.id],
     queryFn: () => fetchPhotoLibrary(album.id),
@@ -1148,8 +1369,7 @@ function AdminStudio({ album }: { album: Album }) {
   }
 
   function submitInvite(data: InviteForm) {
-    setInvites((current) => [data, ...current])
-    reset({ email: '', role: 'Viewer' })
+    inviteMutation.mutate(data)
   }
 
   async function submitPhotoUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -1377,13 +1597,15 @@ function AdminStudio({ album }: { album: Album }) {
           <form className="invite-form" onSubmit={handleSubmit(submitInvite)}>
             <input placeholder="family@email.com" {...register('email')} />
             <select {...register('role')}>
-              <option value="Viewer">Viewer</option>
               <option value="Editor">Editor</option>
+              <option value="Viewer">Viewer</option>
             </select>
             {formState.errors.email && <small>{formState.errors.email.message}</small>}
-            <button type="submit">
+            {inviteMutation.error && <small>{inviteMutation.error.message}</small>}
+            {inviteMutation.isSuccess && <small className="success-message">Invitacion enviada por email.</small>}
+            <button disabled={inviteMutation.isPending} type="submit">
               <MailPlus size={17} aria-hidden="true" />
-              Crear invitacion
+              {inviteMutation.isPending ? 'Enviando' : 'Enviar invitacion'}
             </button>
           </form>
 
