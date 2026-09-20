@@ -207,6 +207,8 @@ type AuthStatus = {
 }
 
 const queryClient = new QueryClient()
+const soundPreferenceKey = 'pablos-album-sound-enabled'
+const pageFlipSoundPath = '/audio/page-flip-soft.wav'
 
 const useAlbumStore = create<{
   mode: AppMode
@@ -218,10 +220,15 @@ const useAlbumStore = create<{
 }>((set) => ({
   mode: new URLSearchParams(window.location.search).get('studio') === '1' ? 'admin' : 'viewer',
   pageIndex: 0,
-  soundEnabled: false,
+  soundEnabled: window.localStorage.getItem(soundPreferenceKey) === 'true',
   setMode: (mode) => set({ mode }),
   setPageIndex: (pageIndex) => set({ pageIndex }),
-  toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
+  toggleSound: () =>
+    set((state) => {
+      const soundEnabled = !state.soundEnabled
+      window.localStorage.setItem(soundPreferenceKey, String(soundEnabled))
+      return { soundEnabled }
+    }),
 }))
 
 async function fetchAlbum(): Promise<Album> {
@@ -739,6 +746,7 @@ function AlbumViewer({ album }: { album: Album }) {
   const heroRef = useRef<HTMLDivElement | null>(null)
   const bookRef = useRef<HTMLDivElement | null>(null)
   const dragState = useRef<DragState | null>(null)
+  const pageFlipAudioRef = useRef<HTMLAudioElement | null>(null)
   const pressedPhoto = useRef<Photo | null>(null)
   const turnDirection = useRef<'next' | 'previous'>('next')
   const isSinglePage = useIsSinglePage()
@@ -756,6 +764,18 @@ function AlbumViewer({ album }: { album: Album }) {
   }, [pageIndex])
 
   useEffect(() => {
+    const audio = new Audio(pageFlipSoundPath)
+    audio.preload = 'auto'
+    audio.volume = 0.28
+    pageFlipAudioRef.current = audio
+
+    return () => {
+      audio.pause()
+      pageFlipAudioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     const normalized = normalizePageIndex(pageIndex)
     if (normalized !== pageIndex) {
       setPageIndex(normalized)
@@ -770,11 +790,24 @@ function AlbumViewer({ album }: { album: Album }) {
 
     turnDirection.current = normalized > pageIndex ? 'next' : 'previous'
     setPageIndex(normalized)
+    playPageFlipSound()
   }
 
   function normalizePageIndex(value: number) {
     const normalized = Math.max(0, Math.min(maxPageIndex, value))
     return isSinglePage ? normalized : normalized % 2 === 0 ? normalized : normalized - 1
+  }
+
+  function playPageFlipSound() {
+    const audio = pageFlipAudioRef.current
+    if (!soundEnabled || !audio) {
+      return
+    }
+
+    audio.currentTime = 0
+    void audio.play().catch(() => {
+      // Browsers can block playback until the next direct user gesture.
+    })
   }
 
   function animateIn() {
@@ -898,7 +931,7 @@ function AlbumViewer({ album }: { album: Album }) {
           <button disabled={pageIndex + pageStep > maxPageIndex} onClick={() => turnTo(pageIndex + pageStep)} type="button">
             Next
           </button>
-          <button className={soundEnabled ? 'active' : ''} onClick={toggleSound} type="button">
+          <button aria-pressed={soundEnabled} className={soundEnabled ? 'active' : ''} onClick={toggleSound} type="button">
             <Sparkles size={17} aria-hidden="true" />
             Sound {soundEnabled ? 'on' : 'off'}
           </button>
