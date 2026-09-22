@@ -1539,11 +1539,15 @@ function AdminStudio({ album }: { album: Album }) {
                       aria-label={`Quitar ${photo.alt || `foto ${index + 1}`} de esta pagina`}
                       className="remove-photo-button"
                       disabled={isPhotoMutating}
-                      onClick={() => unassignPhoto(photo)}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        unassignPhoto(photo)
+                      }}
                       title="Quitar del album, conservar en biblioteca"
                       type="button"
                     >
                       <X size={16} aria-hidden="true" />
+                      <span>Quitar</span>
                     </button>
                   </>
                 ) : (

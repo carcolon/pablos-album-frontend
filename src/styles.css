@@ -868,25 +868,42 @@ h3 {
 
 .remove-photo-button {
   align-items: center;
-  background: rgba(255, 250, 240, 0.94);
-  border: 1px solid rgba(155, 53, 44, 0.24);
+  background: rgba(95, 33, 27, 0.94);
+  border: 1px solid rgba(255, 250, 240, 0.72);
   border-radius: 999px;
-  color: #7d2f27;
+  box-shadow: 0 10px 24px rgba(25, 22, 19, 0.28);
+  color: #fffaf0;
   display: inline-flex;
-  height: 34px;
+  gap: 5px;
+  height: 36px;
   justify-content: center;
-  padding: 0;
+  min-height: 36px;
+  padding: 0 10px;
   position: absolute;
-  right: 10px;
-  top: 10px;
-  width: 34px;
-  z-index: 3;
+  right: 12px;
+  top: 12px;
+  width: auto;
+  z-index: 30;
+}
+
+.remove-photo-button span {
+  background: transparent;
+  bottom: auto;
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  left: auto;
+  padding: 0;
+  pointer-events: none;
+  position: static;
+  right: auto;
+  text-align: center;
 }
 
 .remove-photo-button:hover {
-  background: #fffaf0;
-  border-color: rgba(155, 53, 44, 0.42);
-  color: #5f211b;
+  background: #7d2f27;
+  border-color: #fffaf0;
+  color: #fffaf0;
 }
 
 .remove-photo-button:disabled {
