@@ -210,6 +210,21 @@ const queryClient = new QueryClient()
 const soundPreferenceKey = 'pablos-album-sound-enabled'
 const pageFlipSoundPath = '/audio/page-flip-soft.wav'
 
+function getInitialMode(): AppMode {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('studio') === '1' ? 'admin' : 'viewer'
+}
+
+function syncModeToUrl(mode: AppMode) {
+  const url = new URL(window.location.href)
+  if (mode === 'admin') {
+    url.searchParams.set('studio', '1')
+  } else {
+    url.searchParams.delete('studio')
+  }
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 const useAlbumStore = create<{
   mode: AppMode
   pageIndex: number
@@ -218,10 +233,13 @@ const useAlbumStore = create<{
   setPageIndex: (pageIndex: number) => void
   toggleSound: () => void
 }>((set) => ({
-  mode: new URLSearchParams(window.location.search).get('studio') === '1' ? 'admin' : 'viewer',
+  mode: getInitialMode(),
   pageIndex: 0,
   soundEnabled: window.localStorage.getItem(soundPreferenceKey) === 'true',
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => {
+    syncModeToUrl(mode)
+    set({ mode })
+  },
   setPageIndex: (pageIndex) => set({ pageIndex }),
   toggleSound: () =>
     set((state) => {
@@ -299,6 +317,19 @@ async function updatePageLayout(albumId: string, pageId: string, layout: string)
   if (!response.ok) {
     const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
     throw new Error(problem?.error ?? problem?.detail ?? 'Layout update failed')
+  }
+}
+
+async function updateAlbumCoverText(albumId: string, data: { title: string; subtitle: string; description: string }): Promise<void> {
+  const response = await apiFetch(`/api/albums/${albumId}/cover`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Cover update failed')
   }
 }
 
@@ -1008,7 +1039,7 @@ function coverPage(album: Album): AlbumPage {
     pageNumber: 0,
     layout: 'Cover',
     title: album.title,
-    dateLabel: 'Family archive',
+    dateLabel: album.subtitle || 'Family archive',
     text: album.description,
     photos: [],
   }
@@ -1250,6 +1281,9 @@ function AdminStudio({ album }: { album: Album }) {
   const [draggedPhotoId, setDraggedPhotoId] = useState<string>('')
   const [photoTitle, setPhotoTitle] = useState('')
   const [photoCaption, setPhotoCaption] = useState('')
+  const [coverTitle, setCoverTitle] = useState(album.title)
+  const [coverSubtitle, setCoverSubtitle] = useState(album.subtitle)
+  const [coverDescription, setCoverDescription] = useState(album.description)
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
   const [isPageMutating, setIsPageMutating] = useState(false)
   const [isPhotoMutating, setIsPhotoMutating] = useState(false)
@@ -1270,6 +1304,9 @@ function AdminStudio({ album }: { album: Album }) {
   useEffect(() => {
     setWorkingPages(album.pages)
     setSelectedPageId((current) => (album.pages.some((page) => page.id === current) ? current : album.pages[0]?.id ?? ''))
+    setCoverTitle(album.title)
+    setCoverSubtitle(album.subtitle)
+    setCoverDescription(album.description)
   }, [album])
 
   const selectedPage = workingPages.find((page) => page.id === selectedPageId) ?? workingPages[0]
@@ -1431,6 +1468,22 @@ function AdminStudio({ album }: { album: Album }) {
     }
   }
 
+  async function saveCoverText(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setStudioStatus('Guardando portada...')
+    try {
+      await updateAlbumCoverText(album.id, {
+        title: coverTitle,
+        subtitle: coverSubtitle,
+        description: coverDescription,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['album'] })
+      setStudioStatus('Portada actualizada.')
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Cover update failed.')
+    }
+  }
+
   function submitInvite(data: InviteForm) {
     inviteMutation.mutate(data)
   }
@@ -1547,7 +1600,6 @@ function AdminStudio({ album }: { album: Album }) {
                       type="button"
                     >
                       <X size={16} aria-hidden="true" />
-                      <span>Quitar</span>
                     </button>
                   </>
                 ) : (
@@ -1595,6 +1647,29 @@ function AdminStudio({ album }: { album: Album }) {
       </div>
 
       <aside className="studio-sidebar studio-media-panel">
+        <form className="cover-editor" onSubmit={saveCoverText}>
+          <div className="studio-section-heading">
+            <p className="eyebrow">Portada</p>
+            <h2>Texto</h2>
+          </div>
+          <label>
+            Titulo
+            <input onChange={(event) => setCoverTitle(event.target.value)} value={coverTitle} />
+          </label>
+          <label>
+            Subtitulo
+            <input onChange={(event) => setCoverSubtitle(event.target.value)} value={coverSubtitle} />
+          </label>
+          <label>
+            Descripcion
+            <textarea onChange={(event) => setCoverDescription(event.target.value)} rows={3} value={coverDescription} />
+          </label>
+          <button type="submit">
+            <Save size={17} aria-hidden="true" />
+            Guardar portada
+          </button>
+        </form>
+
         <form className="studio-upload" onSubmit={submitPhotoUpload}>
           <div className="studio-section-heading">
             <p className="eyebrow">Drive</p>
