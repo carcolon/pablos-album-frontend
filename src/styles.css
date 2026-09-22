@@ -813,6 +813,7 @@ h3 {
   min-height: 170px;
   overflow: hidden;
   padding: 12px;
+  position: relative;
   text-align: center;
 }
 
@@ -827,7 +828,7 @@ h3 {
   justify-items: center;
 }
 
-.drop-slot button {
+.drop-slot > button:not(.remove-photo-button) {
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -840,8 +841,8 @@ h3 {
   width: 100%;
 }
 
-.drop-slot button:hover,
-.drop-slot button.selected-photo {
+.drop-slot > button:not(.remove-photo-button):hover,
+.drop-slot > button:not(.remove-photo-button).selected-photo {
   background: transparent;
   outline: 4px solid rgba(93, 127, 157, 0.45);
   outline-offset: -4px;
@@ -863,6 +864,34 @@ h3 {
   position: absolute;
   right: 0;
   text-align: left;
+}
+
+.remove-photo-button {
+  align-items: center;
+  background: rgba(255, 250, 240, 0.94);
+  border: 1px solid rgba(155, 53, 44, 0.24);
+  border-radius: 999px;
+  color: #7d2f27;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 34px;
+  z-index: 3;
+}
+
+.remove-photo-button:hover {
+  background: #fffaf0;
+  border-color: rgba(155, 53, 44, 0.42);
+  color: #5f211b;
+}
+
+.remove-photo-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .studio-page-meta {

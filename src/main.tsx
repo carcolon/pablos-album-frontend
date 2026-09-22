@@ -45,8 +45,8 @@ type Photo = {
 }
 
 type PhotoLibraryItem = Photo & {
-  pageId: string
-  pageNumber: number
+  pageId: string | null
+  pageNumber: number | null
 }
 
 type AlbumPage = {
@@ -338,6 +338,17 @@ async function assignPhotoToPage(albumId: string, pageId: string, photoId: strin
   if (!response.ok) {
     const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
     throw new Error(problem?.error ?? problem?.detail ?? 'Photo placement failed')
+  }
+}
+
+async function removePhotoFromAlbum(albumId: string, photoId: string): Promise<void> {
+  const response = await apiFetch(`/api/albums/${albumId}/photos/${photoId}/assignment`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null
+    throw new Error(problem?.error ?? problem?.detail ?? 'Photo removal failed')
   }
 }
 
@@ -1241,6 +1252,7 @@ function AdminStudio({ album }: { album: Album }) {
   const [photoCaption, setPhotoCaption] = useState('')
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null)
   const [isPageMutating, setIsPageMutating] = useState(false)
+  const [isPhotoMutating, setIsPhotoMutating] = useState(false)
   const inviteMutation = useMutation({
     mutationFn: inviteUser,
     onSuccess: (_, data) => {
@@ -1382,6 +1394,24 @@ function AdminStudio({ album }: { album: Album }) {
     }
   }
 
+  async function unassignPhoto(photo: Photo) {
+    setIsPhotoMutating(true)
+    setStudioStatus('Quitando foto de la pagina...')
+    try {
+      await removePhotoFromAlbum(album.id, photo.id)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['album'] }),
+        queryClient.invalidateQueries({ queryKey: ['photo-library', album.id] }),
+      ])
+      setSelectedPhotoId(photo.id)
+      setStudioStatus('Foto quitada del album. Sigue disponible en la biblioteca.')
+    } catch (error) {
+      setStudioStatus(error instanceof Error ? error.message : 'Photo removal failed.')
+    } finally {
+      setIsPhotoMutating(false)
+    }
+  }
+
   async function savePhotoDetails(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedPhoto) {
@@ -1500,10 +1530,22 @@ function AdminStudio({ album }: { album: Album }) {
                 onDrop={(event) => dropPhotoOnSlot(event, index)}
               >
                 {photo ? (
-                  <button className={selectedPhoto?.id === photo.id ? 'selected-photo' : ''} onClick={() => setSelectedPhotoId(photo.id)} type="button">
-                    <img src={mediaUrl(photo.url)} alt={photo.alt} />
-                    <span>{photo.alt || `Foto ${index + 1}`}</span>
-                  </button>
+                  <>
+                    <button className={selectedPhoto?.id === photo.id ? 'selected-photo' : ''} onClick={() => setSelectedPhotoId(photo.id)} type="button">
+                      <img src={mediaUrl(photo.url)} alt={photo.alt} />
+                      <span>{photo.alt || `Foto ${index + 1}`}</span>
+                    </button>
+                    <button
+                      aria-label={`Quitar ${photo.alt || `foto ${index + 1}`} de esta pagina`}
+                      className="remove-photo-button"
+                      disabled={isPhotoMutating}
+                      onClick={() => unassignPhoto(photo)}
+                      title="Quitar del album, conservar en biblioteca"
+                      type="button"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </>
                 ) : (
                   <div>
                     <UploadCloud size={26} aria-hidden="true" />
@@ -1583,7 +1625,7 @@ function AdminStudio({ album }: { album: Album }) {
                 type="button"
               >
                 <img src={mediaUrl(photo.url)} alt={photo.alt} />
-                <span>Pag. {photo.pageNumber}</span>
+                <span>{photo.pageNumber ? `Pag. ${photo.pageNumber}` : 'No asignada'}</span>
               </button>
             ))}
             {libraryPhotos.length === 0 && <p className="empty-library">Sube la primera foto para empezar a disenar las paginas.</p>}
@@ -1593,7 +1635,15 @@ function AdminStudio({ album }: { album: Album }) {
         <form className="photo-editor" onSubmit={savePhotoDetails}>
           <div className="library-heading">
             <strong>Editar foto</strong>
-            <span>{selectedPhoto ? `Pag. ${'pageNumber' in selectedPhoto ? selectedPhoto.pageNumber : selectedPage?.pageNumber}` : 'Sin foto'}</span>
+            <span>
+              {selectedPhoto
+                ? 'pageNumber' in selectedPhoto
+                  ? selectedPhoto.pageNumber
+                    ? `Pag. ${selectedPhoto.pageNumber}`
+                    : 'No asignada'
+                  : `Pag. ${selectedPage?.pageNumber}`
+                : 'Sin foto'}
+            </span>
           </div>
           <label>
             Titulo
